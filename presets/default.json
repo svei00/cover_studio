@@ -1,0 +1,31 @@
+{
+  "canvas": {
+    "width": 1920,
+    "height": 1080
+  },
+  "band_color": "#21B868",
+  "accent_color": "#3182DF",
+  "text_color": "#F1EBDF",
+  "text_outline_color": "#B38E5D",
+  "text_outline_enabled": false,
+  "band_opacity": 0.9,
+  "accent_opacity_independent": false,
+  "accent_opacity": 0.9,
+  "orientation": "bottom-right",
+  "accent_shift": 30.0,
+  "corner_radius": 0.0,
+  "band_height": 210.0,
+  "band_margin_left": 90.0,
+  "band_margin_top": 80.0,
+  "band_width": null,
+  "vertical_position": "top",
+  "font_family": "Georgia, 'Times New Roman', serif",
+  "font_size": 78.0,
+  "font_weight": "bold",
+  "text_shadow_enabled": true,
+  "text_shadow_intensity": 0.55,
+  "inner_margin": 60.0,
+  "auto_fit_font": true,
+  "max_lines": 2,
+  "save_svg_alongside": false
+}

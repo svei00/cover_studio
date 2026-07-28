@@ -87,6 +87,9 @@ class CoverConfig:
     text_shadow_enabled: bool = True
     text_shadow_intensity: float = 0.55
     inner_margin: float = 60.0
+    auto_fit_font: bool = True
+    max_lines: int = 2
+    save_svg_alongside: bool = False
 
 
 def compute_band_geometry(config: CoverConfig) -> BandGeometry:
