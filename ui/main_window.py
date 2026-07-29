@@ -8,8 +8,8 @@ import time
 import unicodedata
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QFontMetricsF, QPixmap
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QFontMetricsF
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStyle,
@@ -48,7 +47,10 @@ from core.geometry import (
 )
 from core.presets import PresetError, list_presets, load_preset, save_preset
 from core.text_utils import normalize_title, wrap_title
+from ui.preview import PreviewWidget
 from ui.widgets import ColorPickerButton, SliderSpinBox
+
+PREVIEW_DEBOUNCE_MS = 250
 
 PRESETS_DIR = Path(__file__).resolve().parent.parent / "presets"
 SUPPORTED_PHOTO_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -167,6 +169,11 @@ class MainWindow(QMainWindow):
         self.output_manually_edited = False
         self.last_output_path: Path | None = None
 
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(PREVIEW_DEBOUNCE_MS)
+        self._preview_timer.timeout.connect(self._trigger_preview_render)
+
         self._build_ui()
         self._apply_config_to_widgets(self.config)
         self._refresh_preset_combo()
@@ -190,7 +197,44 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
+        self._connect_preview_triggers()
         self.statusBar().showMessage("Listo.")
+
+    def _connect_preview_triggers(self) -> None:
+        """Cualquier control que cambie el diseno o el contenido debe
+        reprogramar la vista previa en vivo (con debounce)."""
+        triggers = [
+            self.title_edit.textChanged,
+            self.band_color_picker.colorChanged,
+            self.accent_color_picker.colorChanged,
+            self.text_color_picker.colorChanged,
+            self.outline_color_picker.colorChanged,
+            self.outline_checkbox.toggled,
+            self.band_opacity_slider.valueChanged,
+            self.accent_opacity_independent_checkbox.toggled,
+            self.accent_opacity_slider.valueChanged,
+            self.orientation_combo.currentIndexChanged,
+            self.accent_shift_slider.valueChanged,
+            self.corner_radius_slider.valueChanged,
+            self.band_height_slider.valueChanged,
+            self.band_margin_left_slider.valueChanged,
+            self.band_margin_top_slider.valueChanged,
+            self.band_width_manual_checkbox.toggled,
+            self.band_width_slider.valueChanged,
+            self.vertical_position_combo.currentIndexChanged,
+            self.font_combo.currentFontChanged,
+            self.font_size_slider.valueChanged,
+            self.auto_fit_checkbox.toggled,
+            self.weight_combo.currentIndexChanged,
+            self.shadow_checkbox.toggled,
+            self.shadow_intensity_slider.valueChanged,
+            self.max_lines_spin.valueChanged,
+            self.canvas_combo.currentTextChanged,
+            self.canvas_width_spin.valueChanged,
+            self.canvas_height_spin.valueChanged,
+        ]
+        for signal in triggers:
+            signal.connect(self._schedule_preview_update)
 
     def _build_preset_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -462,14 +506,12 @@ class MainWindow(QMainWindow):
     def _build_preview_panel(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.addWidget(QLabel("Vista previa"))
+        layout.addWidget(QLabel("Vista previa — arrastra la banda para reposicionarla"))
 
-        self.preview_label = QLabel("Genera una portada para verla aqui.")
-        self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setMinimumSize(400, 225)
-        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.preview_label.setStyleSheet("background-color: #202020; color: #AAAAAA;")
-        layout.addWidget(self.preview_label, stretch=1)
+        self.preview_widget = PreviewWidget()
+        self.preview_widget.bandRepositioned.connect(self._on_band_dragged)
+        self.preview_widget.renderFailed.connect(self._on_preview_render_failed)
+        layout.addWidget(self.preview_widget, stretch=1)
 
         return container
 
@@ -556,6 +598,7 @@ class MainWindow(QMainWindow):
         self.photo_path = path
         self.photo_edit.setText(str(path))
         self._autofill_output_path()
+        self._schedule_preview_update()
 
     def _on_output_manually_edited(self, _text: str) -> None:
         self.output_manually_edited = True
@@ -784,6 +827,59 @@ class MainWindow(QMainWindow):
                 break
 
     # ------------------------------------------------------------------
+    # Vista previa en vivo
+    # ------------------------------------------------------------------
+
+    def _schedule_preview_update(self, *_args) -> None:
+        """Reinicia el debounce de 250 ms; el render real ocurre en
+        _trigger_preview_render cuando el usuario deja de tocar controles."""
+        self._preview_timer.start()
+
+    def _trigger_preview_render(self) -> None:
+        title = self.title_edit.toPlainText().strip()
+        if not title:
+            return
+        title = normalize_title(title)
+        band = compute_band_geometry(self.config)
+        max_width = max(1.0, band.width - 2 * self.config.inner_margin)
+        wrap_result = wrap_title(
+            title,
+            measure=self._make_measure_fn(),
+            max_width=max_width,
+            initial_font_size=self.config.font_size,
+            max_lines=self.config.max_lines,
+            auto_fit=self.config.auto_fit_font,
+            min_font_size=24.0,
+        )
+        self.preview_widget.request_render(self.config, wrap_result.lines, wrap_result.font_size, self.photo_path)
+
+    def _on_preview_render_failed(self, message: str) -> None:
+        self.statusBar().showMessage(f"No se pudo actualizar la vista previa: {message}")
+
+    def _on_band_dragged(self, new_left: float, new_top: float) -> None:
+        """El usuario esta arrastrando la banda en la vista previa. La
+        primera vez congela el ancho manual para que no cambie de tamano
+        mientras se arrastra (el ancho derivado depende del margen
+        izquierdo), y siempre cambia a posicion vertical 'Arriba', que es la
+        unica en la que el margen superior es una coordenada literal."""
+        if not self.band_width_manual_checkbox.isChecked():
+            self.band_width_manual_checkbox.setChecked(True)
+
+        band = compute_band_geometry(self.config)
+        max_left = max(0.0, self.config.canvas.width - band.width)
+        max_top = max(0.0, self.config.canvas.height - band.height)
+        clamped_left = min(max(0.0, new_left), max_left)
+        clamped_top = min(max(0.0, new_top), max_top)
+
+        if self.config.vertical_position is not VerticalPosition.TOP:
+            self._select_combo_data(self.vertical_position_combo, VerticalPosition.TOP)
+
+        self.band_margin_left_slider.set_value(clamped_left)
+        self.band_margin_top_slider.set_value(clamped_top)
+        self.config.band_margin_left = clamped_left
+        self.config.band_margin_top = clamped_top
+
+    # ------------------------------------------------------------------
     # Medicion de texto y generacion
     # ------------------------------------------------------------------
 
@@ -864,7 +960,7 @@ class MainWindow(QMainWindow):
         self.last_output_path = output_path
         self.open_folder_btn.setEnabled(True)
         self.statusBar().showMessage(f"Guardado en {output_path} · {elapsed:.2f}s")
-        self._update_preview(output_path)
+        self._trigger_preview_render()
 
     def _confirm_overwrite(self, output_path: Path) -> bool:
         dialog = OverwriteConfirmDialog(self)
@@ -880,12 +976,3 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Copia de la foto original guardada en {backup_path}")
         return True
-
-    def _update_preview(self, output_path: Path) -> None:
-        pixmap = QPixmap(str(output_path))
-        if pixmap.isNull():
-            return
-        scaled = pixmap.scaled(
-            self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        self.preview_label.setPixmap(scaled)

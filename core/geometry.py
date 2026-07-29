@@ -307,15 +307,20 @@ def build_svg(
     return "\n".join(svg)
 
 
-def render_png(svg_text: str, output_path: Path, width: int, height: int) -> None:
-    """Rasteriza el SVG a PNG con resvg (sin dependencias nativas: a
-    diferencia de cairosvg, no requiere libcairo instalado en el sistema,
-    algo que en Windows normalmente obliga a instalar el runtime de GTK)."""
+def render_png_bytes(svg_text: str, width: int, height: int) -> bytes:
+    """Rasteriza el SVG a bytes PNG en memoria con resvg (sin dependencias
+    nativas: a diferencia de cairosvg, no requiere libcairo instalado en el
+    sistema, algo que en Windows normalmente obliga a instalar el runtime de
+    GTK). Pensada para la vista previa, que no necesita tocar disco."""
     try:
-        png_bytes = resvg_py.svg_to_bytes(svg_string=svg_text, width=width, height=height)
+        return resvg_py.svg_to_bytes(svg_string=svg_text, width=width, height=height)
     except ValueError as exc:
         raise GeometryError(f"No se pudo rasterizar el SVG: {exc}") from exc
 
+
+def render_png(svg_text: str, output_path: Path, width: int, height: int) -> None:
+    """Rasteriza el SVG y lo escribe como PNG en output_path."""
+    png_bytes = render_png_bytes(svg_text, width, height)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(png_bytes)
