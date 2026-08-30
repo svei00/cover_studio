@@ -4,7 +4,11 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: diseño aprobado pendiente. Nada implementado.
+Estado: **fase 1 hecha** (`core/annotate/`: style, model, primitives, text_measure,
+con 26 tests). Pendiente: raster/svg/io, UI, lupa (`Magnifier`).
+
+Nota: en el código, `Magnifier` todavía no existe en el modelo; entra en la fase 5.
+La firma `Annotation` hoy es `Marker | Arrow | StepBadge | TextLabel | Redaction`.
 
 ---
 
@@ -18,7 +22,7 @@ Estado: diseño aprobado pendiente. Nada implementado.
 | No se renderiza con resvg mientras se edita | Medido en este proyecto: 180–640 ms por render a 1080p. Inservible para arrastrar. |
 | Coordenadas siempre en píxeles de la imagen fuente | Mismo patrón que `PreviewWidget._widget_to_canvas`. Evita la clase de bugs de escala. |
 | Pixelado antes que todo lo demás | Se aplica al bitmap base con Pillow. La lupa y el export SVG usan ese bitmap ya pixelado, así que **un dato anonimizado nunca reaparece dentro de una lupa ni en el SVG**. |
-| Sin herramienta de texto libre | Tu skill pone las etiquetas como `<text>` del SVG de la infografía. Texto quemado en el bitmap no lo ve `check_collisions.py` y no es accesible. Los números de paso sí van. |
+| **Etiqueta de texto (`TextLabel`)**, más potente que la de Lightshot | Multilínea, negrita, alineación, fondo con opacidad, borde, esquinas redondeadas, contorno para texto suelto, y 4 presets de marca (`nota`, `exito`, `alerta`, `libre`). Tradeoff conocido: el texto queda quemado en el PNG, así que `check_collisions.py` no lo ve y no es accesible. Por eso se recomienda dejar el texto largo para la infografía y usar la etiqueta para rótulos cortos. |
 | Proyecto re-editable | Las anotaciones se guardan como JSON junto a la captura (`captura.anotar.json`). Si encuentras un error después de exportar, reabres y corriges, no redibujas. |
 
 ---

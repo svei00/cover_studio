@@ -1,0 +1,286 @@
+"""Del modelo de anotaciones a una lista de primitivas geometricas. La UI las
+pinta con QPainter y el export las convierte a SVG: la geometria vive solo aqui.
+
+marker_primitives es el port de Doc.marker() de infographic_builder.py."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from core.annotate import style
+from core.annotate.model import (
+    Annotation,
+    AnnotationDoc,
+    Arrow,
+    ArrowSide,
+    Marker,
+    Rect,
+    StepBadge,
+    TextAlign,
+    TextLabel,
+)
+from core.annotate.text_measure import measure_line
+
+Point = tuple[float, float]
+
+
+@dataclass(frozen=True)
+class PRect:
+    rect: Rect
+    stroke: str | None
+    width: float
+    opacity: float = 1.0
+    rx: float = 0.0
+    fill: str | None = None
+    fill_opacity: float = 1.0
+
+
+@dataclass(frozen=True)
+class PLine:
+    a: Point
+    b: Point
+    stroke: str
+    width: float
+    opacity: float = 1.0
+
+
+@dataclass(frozen=True)
+class PPolygon:
+    points: tuple[Point, ...]
+    fill: str | None
+    stroke: str | None
+    width: float = 0.0
+    opacity: float = 1.0
+
+
+@dataclass(frozen=True)
+class PCircle:
+    center: Point
+    r: float
+    fill: str | None
+    stroke: str | None
+    width: float = 0.0
+
+
+@dataclass(frozen=True)
+class PText:
+    """pos es el centro vertical de la linea (para dominant-baseline central);
+    anchor es 'start' o 'middle'."""
+
+    pos: Point
+    text: str
+    size: float
+    color: str
+    bold: bool
+    anchor: str = "middle"
+    outline: str | None = None
+    outline_width: float = 0.0
+
+
+Primitive = PRect | PLine | PPolygon | PCircle | PText
+
+
+# --------------------------------------------------------------------------
+# Flechas
+# --------------------------------------------------------------------------
+
+def _arrow_parts(a: Point, b: Point, scale: float, glow: bool) -> list[Primitive]:
+    """Linea de a hacia b con punta en b, con el glow dorado debajo."""
+    x1, y1 = a
+    x2, y2 = b
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length == 0:
+        return []
+    sw = style.MARKER_STROKE * scale
+    head = style.ARROW_HEAD * scale
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    bx, by = x2 - ux * head * 1.3, y2 - uy * head * 1.3
+    px, py = -uy, ux
+    pts = (
+        (x2, y2),
+        (bx + px * head * 0.8, by + py * head * 0.8),
+        (bx - px * head * 0.8, by - py * head * 0.8),
+    )
+    parts: list[Primitive] = []
+    if glow:
+        parts.append(PLine(a, b, style.GLOW_GOLD, sw + style.ARROW_GLOW_EXTRA * scale, style.ARROW_GLOW_OPACITY))
+    parts.append(PLine(a, b, style.RED, sw))
+    if glow:
+        parts.append(PPolygon(pts, None, style.GLOW_GOLD, style.ARROW_GLOW_EXTRA * scale, style.ARROW_GLOW_OPACITY))
+    parts.append(PPolygon(pts, style.RED, None))
+    return parts
+
+
+def _marker_arrow_points(rect: Rect, side: ArrowSide, scale: float) -> tuple[Point, Point]:
+    """(inicio, punta) de la flecha de un marcador del lado indicado."""
+    gap = style.ARROW_GAP * scale
+    alen = style.ARROW_LENGTH * scale
+    cx, cy = rect.center
+    if side is ArrowSide.LEFT:
+        tip = (rect.x - gap, cy)
+        return (tip[0] - alen, cy), tip
+    if side is ArrowSide.RIGHT:
+        tip = (rect.right + gap, cy)
+        return (tip[0] + alen, cy), tip
+    if side is ArrowSide.TOP:
+        tip = (cx, rect.y - gap)
+        return (cx, tip[1] - alen), tip
+    if side is ArrowSide.BOTTOM:
+        tip = (cx, rect.bottom + gap)
+        return (cx, tip[1] + alen), tip
+    raise ValueError(f"Lado de flecha no resuelto: {side}")
+
+
+def _arrow_box(rect: Rect, side: ArrowSide, scale: float) -> Rect:
+    start, tip = _marker_arrow_points(rect, side, scale)
+    x0, x1 = sorted((start[0], tip[0]))
+    y0, y1 = sorted((start[1], tip[1]))
+    return Rect(x0, y0, x1 - x0, y1 - y0).inflate(style.ARROW_HEAD * scale)
+
+
+# --------------------------------------------------------------------------
+# Etiquetas de texto
+# --------------------------------------------------------------------------
+
+def label_box(t: TextLabel, scale: float) -> Rect:
+    """Caja que ocupa una etiqueta, con su padding."""
+    size = t.size * scale
+    pad = t.padding * scale
+    line_h = size * style.TEXT_LINE_HEIGHT
+    lines = t.text.split("\n")
+    width = max(measure_line(line, size, t.bold) for line in lines) + 2 * pad
+    height = len(lines) * line_h + 2 * pad
+    return Rect(t.pos[0], t.pos[1], width, height)
+
+
+def text_label_primitives(t: TextLabel, scale: float) -> list[Primitive]:
+    box = label_box(t, scale)
+    size = t.size * scale
+    pad = t.padding * scale
+    line_h = size * style.TEXT_LINE_HEIGHT
+    out: list[Primitive] = []
+    if t.bg is not None or t.border is not None:
+        out.append(
+            PRect(
+                box,
+                stroke=t.border,
+                width=t.border_width * scale if t.border else 0.0,
+                rx=t.rx * scale,
+                fill=t.bg,
+                fill_opacity=t.bg_opacity,
+            )
+        )
+    outline_w = max(2.0, size * 0.12) if t.outline else 0.0
+    for i, line in enumerate(t.text.split("\n")):
+        if not line:
+            continue
+        cy = box.y + pad + line_h * (i + 0.5)
+        if t.align is TextAlign.CENTER:
+            pos, anchor = (box.x + box.w / 2, cy), "middle"
+        else:
+            pos, anchor = (box.x + pad, cy), "start"
+        out.append(PText(pos, line, size, t.color, t.bold, anchor, t.outline, outline_w))
+    return out
+
+
+# --------------------------------------------------------------------------
+# Otras anotaciones
+# --------------------------------------------------------------------------
+
+def marker_primitives(m: Marker, scale: float, side: ArrowSide) -> list[Primitive]:
+    """Resplandor dorado + recuadro rojo + flecha, como Doc.marker()."""
+    rx = style.MARKER_RX * scale
+    out: list[Primitive] = []
+    if m.glow:
+        for off, op in style.GLOW_RINGS:
+            o = off * scale
+            out.append(PRect(m.rect.inflate(o), style.GLOW_GOLD, style.GLOW_RING_WIDTH * scale, op, rx + o))
+    out.append(PRect(m.rect, style.RED, style.MARKER_STROKE * scale, 1.0, rx))
+    if side is not ArrowSide.NONE:
+        start, tip = _marker_arrow_points(m.rect, side, scale)
+        out.extend(_arrow_parts(start, tip, scale, m.glow))
+    return out
+
+
+def arrow_primitives(a: Arrow, scale: float) -> list[Primitive]:
+    return _arrow_parts(a.start, a.end, scale, a.glow)
+
+
+def step_primitives(s: StepBadge, scale: float) -> list[Primitive]:
+    return [
+        PCircle(s.center, style.STEP_RADIUS * scale, style.CARD_FILL, style.GOLD, style.STEP_STROKE * scale),
+        PText(s.center, str(s.number), style.STEP_FONT_SIZE * scale, style.GOLD, True, "middle"),
+    ]
+
+
+# --------------------------------------------------------------------------
+# Limites y orquestacion
+# --------------------------------------------------------------------------
+
+def item_bounds(item: Annotation, scale: float) -> Rect | None:
+    """Caja aproximada de una anotacion, para evitar que las flechas se pisen."""
+    if isinstance(item, Marker):
+        return item.rect.inflate(style.GLOW_RINGS[-1][0] * scale)
+    if isinstance(item, Arrow):
+        x0, x1 = sorted((item.start[0], item.end[0]))
+        y0, y1 = sorted((item.start[1], item.end[1]))
+        return Rect(x0, y0, x1 - x0, y1 - y0).inflate(style.ARROW_HEAD * scale)
+    if isinstance(item, StepBadge):
+        r = style.STEP_RADIUS * scale
+        return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
+    if isinstance(item, TextLabel):
+        return label_box(item, scale)
+    return None
+
+
+def resolve_arrow_side(
+    marker: Marker,
+    image_size: tuple[int, int],
+    others: Sequence[Annotation],
+    scale: float,
+) -> ArrowSide:
+    """AUTO elige el lado con mas espacio libre dentro de la imagen y cuya
+    flecha no pase sobre otras anotaciones; si ninguno cumple, el de mas espacio."""
+    if marker.arrow is not ArrowSide.AUTO:
+        return marker.arrow
+    width, height = image_size
+    r = marker.rect
+    needed = (style.ARROW_GAP + style.ARROW_LENGTH + style.ARROW_HEAD) * scale
+    free = {
+        ArrowSide.LEFT: r.x,
+        ArrowSide.RIGHT: width - r.right,
+        ArrowSide.TOP: r.y,
+        ArrowSide.BOTTOM: height - r.bottom,
+    }
+    order = sorted(free, key=lambda s: -free[s])
+    obstacles = [b for o in others if o is not marker and (b := item_bounds(o, scale)) is not None]
+    for side in order:
+        if free[side] < needed:
+            continue
+        if not any(_arrow_box(r, side, scale).intersects(b) for b in obstacles):
+            return side
+    return order[0]
+
+
+def doc_scale(doc: AnnotationDoc) -> float:
+    return doc.style_scale if doc.style_scale else style.auto_scale(doc.image_size[0])
+
+
+def build_primitives(doc: AnnotationDoc) -> list[Primitive]:
+    """Primitivas de todo el documento, en orden de dibujo. Las Redaction no
+    generan primitivas: viven en el bitmap."""
+    scale = doc_scale(doc)
+    out: list[Primitive] = []
+    for item in doc.items:
+        if isinstance(item, Marker):
+            side = resolve_arrow_side(item, doc.image_size, doc.items, scale)
+            out.extend(marker_primitives(item, scale, side))
+        elif isinstance(item, Arrow):
+            out.extend(arrow_primitives(item, scale))
+        elif isinstance(item, StepBadge):
+            out.extend(step_primitives(item, scale))
+        elif isinstance(item, TextLabel):
+            out.extend(text_label_primitives(item, scale))
+    return out
