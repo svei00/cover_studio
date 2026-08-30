@@ -3,7 +3,7 @@ reenvia el mouse y el teclado al EditController."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen
@@ -35,6 +35,7 @@ class AnnotateCanvas(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self._image: QImage | None = None
         self._primitives: list[Primitive] = []
+        self._lens_images: Mapping[str, QImage] = {}
         self._controller: EditController | None = None
 
     def set_controller(self, controller: EditController) -> None:
@@ -42,9 +43,15 @@ class AnnotateCanvas(QWidget):
         controller.selectionChanged.connect(self.update)
         controller.toolChanged.connect(lambda _tool: self.update())
 
-    def set_content(self, image: QImage | None, primitives: Sequence[Primitive]) -> None:
+    def set_content(
+        self,
+        image: QImage | None,
+        primitives: Sequence[Primitive],
+        lens_images: Mapping[str, QImage] | None = None,
+    ) -> None:
         self._image = image
         self._primitives = list(primitives)
+        self._lens_images = lens_images or {}
         self.update()
 
     # ------------------------------------------------------------------
@@ -96,7 +103,7 @@ class AnnotateCanvas(QWidget):
         painter.translate(ox, oy)
         painter.scale(scale, scale)
         painter.drawImage(0, 0, self._image)
-        paint_primitives(painter, self._primitives)
+        paint_primitives(painter, self._primitives, self._lens_images)
         painter.restore()
         self._paint_selection(painter)
 
@@ -110,13 +117,13 @@ class AnnotateCanvas(QWidget):
             return
         handles = edit.item_handles(item)
         if not isinstance(item, Arrow):
-            box = edit.selection_rect(item, self._controller.scale())
-            top_left = self.image_to_view((box.x, box.y))
-            bottom_right = self.image_to_view((box.right, box.bottom))
             pen = QPen(QColor(SELECTION_COLOR), 1.5, Qt.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(QRectF(top_left, bottom_right).adjusted(-4, -4, 4, 4))
+            for box in edit.selection_rects(item, self._controller.scale()):
+                top_left = self.image_to_view((box.x, box.y))
+                bottom_right = self.image_to_view((box.right, box.bottom))
+                painter.drawRect(QRectF(top_left, bottom_right).adjusted(-4, -4, 4, 4))
         painter.setPen(QPen(QColor(CARD_FILL), 1.5))
         painter.setBrush(QColor("#FFFFFF"))
         half = HANDLE_PX / 2

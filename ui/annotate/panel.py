@@ -6,16 +6,29 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QLabel,
     QPlainTextEdit,
+    QPushButton,
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from core.annotate.model import Arrow, ArrowSide, Marker, Redaction, StepBadge, TextAlign, TextLabel
+from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
+from core.annotate.model import (
+    Arrow,
+    ArrowSide,
+    LensShape,
+    Magnifier,
+    Marker,
+    Redaction,
+    StepBadge,
+    TextAlign,
+    TextLabel,
+)
 from core.annotate.style import TEXT_PRESETS
 from ui.annotate.controller import EditController
 
@@ -28,9 +41,10 @@ ARROW_LABELS = {
     ArrowSide.NONE: "Sin flecha",
 }
 ALIGN_LABELS = {TextAlign.LEFT: "Izquierda", TextAlign.CENTER: "Centrada"}
+LENS_SHAPE_LABELS = {LensShape.CIRCLE: "Circular", LensShape.ROUNDED: "Rectangular redondeada"}
 PRESET_LABELS = {"nota": "Nota", "exito": "Exito", "alerta": "Alerta", "libre": "Libre (con contorno)"}
 
-_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION = range(6)
+_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS = range(7)
 
 
 class PropertiesPanel(QWidget):
@@ -54,6 +68,7 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_step_page())
         self._pages.addWidget(self._build_text_page())
         self._pages.addWidget(self._build_redaction_page())
+        self._pages.addWidget(self._build_lens_page())
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)
@@ -144,6 +159,40 @@ class PropertiesPanel(QWidget):
         form.addRow(note)
         return page
 
+    def _build_lens_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self._lens_zoom = QDoubleSpinBox()
+        self._lens_zoom.setRange(MIN_ZOOM, MAX_ZOOM)
+        self._lens_zoom.setSingleStep(0.25)
+        self._lens_zoom.setDecimals(2)
+        self._lens_zoom.setSuffix(" x")
+        self._lens_zoom.valueChanged.connect(lambda v: self._apply(zoom=float(v)))
+        self._lens_warning = QLabel(
+            "Con zoom alto el texto de una captura se ve borroso. Para texto legible, "
+            "captura con mas zoom en Excel."
+        )
+        self._lens_warning.setWordWrap(True)
+        self._lens_warning.setStyleSheet("color: #E8B95C;")
+        self._lens_warning.setVisible(False)
+        self._lens_shape = QComboBox()
+        for shape, label in LENS_SHAPE_LABELS.items():
+            self._lens_shape.addItem(label, shape.value)
+        self._lens_shape.currentIndexChanged.connect(
+            lambda _i: self._apply(shape=LensShape(self._lens_shape.currentData()))
+        )
+        self._lens_connector = QCheckBox("Conector entre origen y lente")
+        self._lens_connector.toggled.connect(lambda on: self._apply(connector=on))
+        replace_btn = QPushButton("Recolocar lupa")
+        replace_btn.setToolTip("Coloca el lente en el lado con mas espacio, sin cubrir su origen")
+        replace_btn.clicked.connect(self._c.auto_place_selected_lens)
+        form.addRow("Zoom", self._lens_zoom)
+        form.addRow(self._lens_warning)
+        form.addRow("Forma", self._lens_shape)
+        form.addRow(self._lens_connector)
+        form.addRow(replace_btn)
+        return page
+
     # ------------------------------------------------------------------
     # Edicion y sincronizacion
     # ------------------------------------------------------------------
@@ -192,6 +241,14 @@ class PropertiesPanel(QWidget):
                     self._text_size.setValue(round(item.size))
                 self._text_bold.setChecked(item.bold)
                 self._set_combo(self._text_align, item.align.value)
+            elif isinstance(item, Magnifier):
+                self._pages.setCurrentIndex(_PAGE_LENS)
+                self._title.setText("Lupa")
+                if abs(self._lens_zoom.value() - item.zoom) > 1e-9:
+                    self._lens_zoom.setValue(item.zoom)
+                self._lens_warning.setVisible(item.zoom > RECOMMENDED_MAX_ZOOM)
+                self._set_combo(self._lens_shape, item.shape.value)
+                self._lens_connector.setChecked(item.connector)
             elif isinstance(item, Redaction):
                 self._pages.setCurrentIndex(_PAGE_REDACTION)
                 self._title.setText("Pixelado")

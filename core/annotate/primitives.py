@@ -9,12 +9,14 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from core.annotate import style
+from core.annotate import lens, style
 from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    LensShape,
+    Magnifier,
     Marker,
     Rect,
     StepBadge,
@@ -35,6 +37,7 @@ class PRect:
     rx: float = 0.0
     fill: str | None = None
     fill_opacity: float = 1.0
+    dash: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,19 @@ class PCircle:
     fill: str | None
     stroke: str | None
     width: float = 0.0
+    dash: tuple[float, float] | None = None
+    opacity: float = 1.0
+
+
+@dataclass(frozen=True)
+class PImage:
+    """Imagen recortada de un lente. key es el id del Magnifier; el recorte lo
+    aporta quien dibuja (raster.lens_crops). shape: 'circle' o 'rounded'."""
+
+    key: str
+    dest: Rect
+    shape: str
+    rx: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -79,7 +95,7 @@ class PText:
     outline_width: float = 0.0
 
 
-Primitive = PRect | PLine | PPolygon | PCircle | PText
+Primitive = PRect | PLine | PPolygon | PCircle | PText | PImage
 
 
 # --------------------------------------------------------------------------
@@ -215,6 +231,38 @@ def step_primitives(s: StepBadge, scale: float) -> list[Primitive]:
     ]
 
 
+def magnifier_primitives(m: Magnifier, scale: float) -> list[Primitive]:
+    """Contorno punteado del origen, conector, imagen del lente y su marco. Cada
+    trazo tan lleva debajo uno navy mas ancho para que se lea sobre capturas
+    claras."""
+    src = lens.effective_source(m)
+    box = lens.lens_rect(m)
+    circle = m.shape is LensShape.CIRCLE
+    dash = (6 * scale, 4 * scale)
+    out: list[Primitive] = []
+
+    if circle:
+        out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, 4 * scale, opacity=0.6))
+        out.append(PCircle(src.center, src.w / 2, None, style.TAN, 2 * scale, dash=dash))
+    else:
+        out.append(PRect(src, style.CARD_FILL, 4 * scale, 0.6, 3 * scale))
+        out.append(PRect(src, style.TAN, 2 * scale, 1.0, 3 * scale, dash=dash))
+
+    for a, b in lens.connector_segments(m):
+        out.append(PLine(a, b, style.CARD_FILL, 4 * scale, 0.6))
+        out.append(PLine(a, b, style.TAN, 2 * scale))
+
+    rx = 0.0 if circle else lens.lens_corner_radius(m)
+    out.append(PImage(m.id, box, m.shape.value, rx))
+    if circle:
+        out.append(PCircle(box.center, box.w / 2, None, style.CARD_FILL, 8 * scale))
+        out.append(PCircle(box.center, box.w / 2, None, style.TAN, 4 * scale))
+    else:
+        out.append(PRect(box, style.CARD_FILL, 8 * scale, 1.0, rx))
+        out.append(PRect(box, style.TAN, 4 * scale, 1.0, rx))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Limites y orquestacion
 # --------------------------------------------------------------------------
@@ -232,6 +280,8 @@ def item_bounds(item: Annotation, scale: float) -> Rect | None:
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
     if isinstance(item, TextLabel):
         return label_box(item, scale)
+    if isinstance(item, Magnifier):
+        return lens.lens_rect(item)
     return None
 
 
@@ -283,4 +333,6 @@ def build_primitives(doc: AnnotationDoc) -> list[Primitive]:
             out.extend(step_primitives(item, scale))
         elif isinstance(item, TextLabel):
             out.extend(text_label_primitives(item, scale))
+        elif isinstance(item, Magnifier):
+            out.extend(magnifier_primitives(item, scale))
     return out

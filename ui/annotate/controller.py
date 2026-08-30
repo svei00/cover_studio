@@ -15,23 +15,25 @@ from enum import Enum
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
-from core.annotate import edit
+from core.annotate import edit, lens
 from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
+    Magnifier,
     Marker,
     Rect,
     Redaction,
     StepBadge,
     text_label_from_preset,
 )
-from core.annotate.primitives import doc_scale
+from core.annotate.primitives import doc_scale, item_bounds
 
 Point = tuple[float, float]
 
 MIN_RECT = 6.0
 MIN_ARROW = 8.0
+MIN_LENS_SOURCE = 12.0
 PROPERTY_MERGE_ID = 1000
 NUDGE_MERGE_ID = 1001
 DEFAULT_REDACTION_BLOCK = 12
@@ -44,6 +46,7 @@ class Tool(str, Enum):
     STEP = "step"
     TEXT = "text"
     REDACT = "redact"
+    LENS = "lens"
 
 
 _HANDLE_CURSORS = {
@@ -52,6 +55,7 @@ _HANDLE_CURSORS = {
     edit.Handle.N: Qt.SizeVerCursor, edit.Handle.S: Qt.SizeVerCursor,
     edit.Handle.E: Qt.SizeHorCursor, edit.Handle.W: Qt.SizeHorCursor,
     edit.Handle.START: Qt.CrossCursor, edit.Handle.END: Qt.CrossCursor,
+    edit.Handle.LENS: Qt.SizeFDiagCursor,
 }
 
 
@@ -123,6 +127,7 @@ class EditController(QObject):
         self._mode: str | None = None
         self._orig: Annotation | None = None
         self._handle: edit.Handle | None = None
+        self._part: str | None = None
         self._grab: Point = (0.0, 0.0)
         self._anchor: Point = (0.0, 0.0)
 
@@ -209,7 +214,7 @@ class EditController(QObject):
         p = edit.clamp_point(point, self.doc.image_size)
         if self.tool is Tool.SELECT:
             self._press_select(p, tol)
-        elif self.tool in (Tool.MARKER, Tool.REDACT, Tool.ARROW):
+        elif self.tool in (Tool.MARKER, Tool.REDACT, Tool.ARROW, Tool.LENS):
             self._begin_create(p)
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
@@ -231,6 +236,7 @@ class EditController(QObject):
         self.select(hit)
         if hit is not None:
             self._mode, self._orig, self._grab = "move", self.item_by_id(hit), p
+            self._part = edit.hit_lens_part(self._orig, p, tol) if isinstance(self._orig, Magnifier) else None
 
     def _begin_create(self, p: Point) -> None:
         assert self.doc is not None
@@ -240,6 +246,8 @@ class EditController(QObject):
         elif self.tool is Tool.REDACT:
             block = max(6, round(DEFAULT_REDACTION_BLOCK * self.scale()))
             item = Redaction(item_id, Rect(p[0], p[1], 0.0, 0.0), block)
+        elif self.tool is Tool.LENS:
+            item = Magnifier(item_id, Rect(p[0], p[1], 0.0, 0.0), p)
         else:
             item = Arrow(item_id, p, p)
         self._insert(item)
@@ -256,12 +264,15 @@ class EditController(QObject):
             return
         p = edit.clamp_point(point, self.doc.image_size)
         if self._mode == "move":
-            self._set_item(edit.move_item(self._orig, p[0] - self._grab[0], p[1] - self._grab[1]))
+            self._set_item(edit.move_item(self._orig, p[0] - self._grab[0], p[1] - self._grab[1], self._part))
         elif self._mode == "resize" and self._handle is not None:
             self._set_item(edit.resize_item(self._orig, self._handle, p))
         elif self._mode == "create":
             if isinstance(self._orig, Arrow):
                 self._set_item(replace(self._orig, end=p))
+            elif isinstance(self._orig, Magnifier):
+                source = edit.rect_from_points(self._anchor, p)
+                self._set_item(replace(self._orig, source=source, lens_center=self._auto_lens_center(self._orig, source)))
             else:
                 self._set_item(replace(self._orig, rect=edit.rect_from_points(self._anchor, p)))
 
@@ -288,8 +299,24 @@ class EditController(QObject):
     def _too_small(item: Annotation) -> bool:
         if isinstance(item, Arrow):
             return abs(item.end[0] - item.start[0]) + abs(item.end[1] - item.start[1]) < MIN_ARROW
+        if isinstance(item, Magnifier):
+            return item.source.w < MIN_LENS_SOURCE or item.source.h < MIN_LENS_SOURCE
         rect = item.rect  # Marker o Redaction
         return rect.w < MIN_RECT or rect.h < MIN_RECT
+
+    def _auto_lens_center(self, m: Magnifier, source: Rect | None = None) -> Point:
+        """Centro automatico del lente de `m` (con su origen, o el dado), esquivando
+        las demas anotaciones."""
+        assert self.doc is not None
+        scale = self.scale()
+        obstacles = [b for o in self.doc.items if o.id != m.id and (b := item_bounds(o, scale)) is not None]
+        return lens.default_lens_center(source or m.source, m.zoom, m.shape, self.doc.image_size, obstacles)
+
+    def auto_place_selected_lens(self) -> None:
+        """Recoloca el lente seleccionado en el lado con mas espacio libre."""
+        selected = self.selected_item()
+        if isinstance(selected, Magnifier):
+            self.edit_selected(lens_center=self._auto_lens_center(selected))
 
     def cursor_at(self, point: Point, tol: float) -> Qt.CursorShape:
         if self.doc is None:
@@ -349,6 +376,10 @@ class EditController(QObject):
         if selected is None:
             return
         updated = replace(selected, **changes)
+        if isinstance(updated, Magnifier) and ("zoom" in changes or "shape" in changes):
+            # un lente mas grande o de otra forma puede quedar encima de su origen o pegado a el
+            if lens.is_crowded(updated):
+                updated = replace(updated, lens_center=self._auto_lens_center(updated))
         if updated != selected:
             self.stack.push(_ReplaceCommand(self, selected, updated, "Editar", PROPERTY_MERGE_ID))
 

@@ -5,13 +5,13 @@ puede diferir levemente."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPolygonF
 
 from core.annotate import style
-from core.annotate.primitives import PCircle, PLine, PPolygon, PRect, PText, Primitive
+from core.annotate.primitives import PCircle, PImage, PLine, PPolygon, PRect, PText, Primitive
 
 _FAMILIES = [name.strip() for name in style.FONT.split(",")]
 
@@ -22,12 +22,20 @@ def _color(hex_color: str, opacity: float = 1.0) -> QColor:
     return color
 
 
-def _pen(hex_color: str | None, width: float, opacity: float = 1.0, round_join: bool = False) -> QPen:
+def _pen(
+    hex_color: str | None,
+    width: float,
+    opacity: float = 1.0,
+    round_join: bool = False,
+    dash: tuple[float, float] | None = None,
+) -> QPen:
     if not hex_color:
         return QPen(Qt.NoPen)
     pen = QPen(_color(hex_color, opacity), width)
     pen.setCapStyle(Qt.FlatCap)
     pen.setJoinStyle(Qt.RoundJoin if round_join else Qt.MiterJoin)
+    if dash and width > 0:
+        pen.setDashPattern([dash[0] / width, dash[1] / width])  # Qt mide el trazo en multiplos del grosor
     return pen
 
 
@@ -51,12 +59,34 @@ def _paint_text(painter: QPainter, p: PText) -> None:
     painter.fillPath(path, _brush(p.color))
 
 
-def paint_primitives(painter: QPainter, primitives: Sequence[Primitive]) -> None:
+def _paint_image(painter: QPainter, p: PImage, images: Mapping[str, QImage]) -> None:
+    image = images.get(p.key)
+    if image is None or image.isNull():
+        return
+    path = QPainterPath()
+    rect = QRectF(p.dest.x, p.dest.y, p.dest.w, p.dest.h)
+    if p.shape == "circle":
+        path.addEllipse(rect)
+    else:
+        path.addRoundedRect(rect, p.rx, p.rx)
+    painter.save()
+    painter.setClipPath(path)
+    painter.drawImage(rect, image)
+    painter.restore()
+
+
+def paint_primitives(
+    painter: QPainter,
+    primitives: Sequence[Primitive],
+    images: Mapping[str, QImage] | None = None,
+) -> None:
     """Dibuja las primitivas en coordenadas de imagen (el llamador aplica la
-    transformacion de vista al painter)."""
+    transformacion de vista al painter). `images` aporta el recorte de cada lupa."""
     for p in primitives:
-        if isinstance(p, PRect):
-            painter.setPen(_pen(p.stroke, p.width, p.opacity))
+        if isinstance(p, PImage):
+            _paint_image(painter, p, images or {})
+        elif isinstance(p, PRect):
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
             painter.setBrush(_brush(p.fill, p.fill_opacity))
             rect = QRectF(p.rect.x, p.rect.y, p.rect.w, p.rect.h)
             if p.rx > 0:
@@ -71,7 +101,7 @@ def paint_primitives(painter: QPainter, primitives: Sequence[Primitive]) -> None
             painter.setBrush(_brush(p.fill))
             painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in p.points]))
         elif isinstance(p, PCircle):
-            painter.setPen(_pen(p.stroke, p.width))
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
             painter.setBrush(_brush(p.fill))
             painter.drawEllipse(QPointF(*p.center), p.r, p.r)
         elif isinstance(p, PText):

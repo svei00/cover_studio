@@ -28,9 +28,9 @@ from PySide6.QtWidgets import (
 
 from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
-from core.annotate.model import AnnotationDoc, Redaction
+from core.annotate.model import AnnotationDoc, Magnifier, Redaction
 from core.annotate.primitives import build_primitives
-from core.annotate.raster import apply_redactions, load_image
+from core.annotate.raster import apply_redactions, lens_crops, load_image
 from core.annotate.svg import default_output_path, export_png, export_svg
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import AnnotateCanvas
@@ -58,6 +58,7 @@ TOOL_BUTTONS = (
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
     (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
+    (Tool.LENS, "Lupa", "Amplia una zona en un lente aparte: arrastra sobre lo que quieres ampliar"),
 )
 
 
@@ -92,6 +93,8 @@ class AnnotateTab(QWidget):
         self.panel = PropertiesPanel(self.controller)
         self._base_key: tuple | None = None
         self._base_qimage: QImage | None = None
+        self._redacted: Image.Image | None = None
+        self._lens_cache: dict[str, tuple[tuple, QImage]] = {}
 
         tools = QHBoxLayout()
         self.tool_buttons: dict[Tool, QToolButton] = {}
@@ -239,12 +242,34 @@ class AnnotateTab(QWidget):
             return
         # el bitmap pixelado solo se recalcula si cambiaron los pixelados
         key = tuple(i for i in self.doc.items if isinstance(i, Redaction))
-        if key != self._base_key or self._base_qimage is None:
-            self._base_qimage = pil_to_qimage(apply_redactions(self.base_image, self.doc.items))
+        if key != self._base_key or self._base_qimage is None or self._redacted is None:
+            self._redacted = apply_redactions(self.base_image, self.doc.items)
+            self._base_qimage = pil_to_qimage(self._redacted)
             self._base_key = key
-        self.canvas.set_content(self._base_qimage, build_primitives(self.doc))
+            self._lens_cache.clear()
+        self.canvas.set_content(self._base_qimage, build_primitives(self.doc), self._lens_images())
         w, h = self.doc.image_size
         self.info_label.setText(f"{self.doc.image_path.name} - {w} x {h} px - {len(self.doc.items)} anotaciones")
+
+    def _lens_images(self) -> dict[str, QImage]:
+        """Recorte ampliado de cada lupa, tomado del bitmap YA pixelado. Se
+        recalcula solo si cambio su origen, zoom o forma (mover el lente no cambia
+        el recorte) o los pixelados."""
+        assert self.doc is not None and self._redacted is not None
+        images: dict[str, QImage] = {}
+        for item in self.doc.items:
+            if not isinstance(item, Magnifier):
+                continue
+            cache_key = (self._base_key, item.source, item.zoom, item.shape)
+            cached = self._lens_cache.get(item.id)
+            if cached is None or cached[0] != cache_key:
+                crop = lens_crops(self._redacted, [item])[item.id]
+                cached = (cache_key, pil_to_qimage(crop))
+                self._lens_cache[item.id] = cached
+            images[item.id] = cached[1]
+        for stale in set(self._lens_cache) - set(images):
+            del self._lens_cache[stale]
+        return images
 
     # ------------------------------------------------------------------
     # Exportar

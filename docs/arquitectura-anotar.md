@@ -4,7 +4,24 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: **fases 1, 2, 3 y 4 hechas.** Fase 4: edición interactiva.
+Estado: **fases 1 a 5 hechas.** Solo falta la fase 6 (pulido).
+
+Fase 5, la lupa (`Magnifier`):
+- `core/annotate/lens.py` (puro): origen efectivo (circular = cuadrado de lado max(w,h)),
+  lente = origen x zoom, conector (dos tangentes externas si es circular; una recta
+  entre bordes si es rectangular), colocación automática (`default_lens_center`) y
+  `is_crowded`.
+- El recorte sale del bitmap YA pixelado (`raster.lens_crops`): un dato anonimizado
+  no reaparece dentro de una lupa ni en el SVG. En pantalla el recorte se cachea por
+  (pixelados, origen, zoom, forma); mover el lente no lo recalcula.
+- Edición: el lente y el origen se mueven por separado (cuerpo del lente vs borde del
+  origen), un asa en la esquina del lente cambia el zoom, y las 8 asas del origen lo
+  redimensionan. Cambiar zoom o forma recoloca el lente si queda encima o a menos de
+  la mitad del hueco estándar de su origen. Botón "Recolocar lupa" en el panel.
+- Zoom recomendado hasta 3x; arriba de eso el panel avisa que el texto se verá borroso.
+- 242 pruebas en total.
+
+Fase 4: edición interactiva.
 - `core/annotate/edit.py` (puro): hit-testing, asas, mover y redimensionar.
 - `ui/annotate/controller.py`: herramienta, selección, gestos y pila de deshacer/rehacer
   (`QUndoStack`). Los gestos modifican el documento en vivo y al soltar empujan UN

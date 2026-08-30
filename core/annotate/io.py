@@ -12,6 +12,8 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    LensShape,
+    Magnifier,
     Marker,
     Rect,
     Redaction,
@@ -48,6 +50,10 @@ def item_to_dict(item: Annotation) -> dict:
                 "align": item.align.value, "outline": item.outline}
     if isinstance(item, Redaction):
         return {"type": "redaction", "id": item.id, "rect": _rect_to_list(item.rect), "block": item.block}
+    if isinstance(item, Magnifier):
+        return {"type": "magnifier", "id": item.id, "source": _rect_to_list(item.source),
+                "lens_center": list(item.lens_center), "zoom": item.zoom,
+                "shape": item.shape.value, "connector": item.connector}
     raise AnnotateError(f"Anotacion desconocida: {type(item).__name__}")
 
 
@@ -69,6 +75,11 @@ def item_from_dict(data: dict) -> Annotation:
             )
         if kind == "redaction":
             return Redaction(data["id"], Rect(*data["rect"]), data["block"])
+        if kind == "magnifier":
+            return Magnifier(
+                data["id"], Rect(*data["source"]), tuple(data["lens_center"]), data["zoom"],
+                LensShape(data["shape"]), data["connector"],
+            )
     except (KeyError, TypeError, ValueError) as exc:
         raise AnnotateError(f"Anotacion invalida en el proyecto ({kind}): {exc}") from exc
     raise AnnotateError(f"Tipo de anotacion desconocido: {kind}")

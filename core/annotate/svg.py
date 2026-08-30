@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import base64
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from PIL import Image
@@ -15,6 +15,7 @@ from core.annotate.errors import AnnotateError
 from core.annotate.model import AnnotationDoc
 from core.annotate.primitives import (
     PCircle,
+    PImage,
     PLine,
     PPolygon,
     PRect,
@@ -22,7 +23,7 @@ from core.annotate.primitives import (
     Primitive,
     build_primitives,
 )
-from core.annotate.raster import apply_redactions, load_image
+from core.annotate.raster import apply_redactions, lens_crops, load_image
 from core.geometry import escape_xml, render_png
 
 
@@ -30,11 +31,39 @@ def _f(value: float) -> str:
     return f"{value:.2f}"
 
 
-def primitive_to_svg(p: Primitive) -> str:
+def _dash(dash: tuple[float, float] | None) -> str:
+    return f' stroke-dasharray="{_f(dash[0])} {_f(dash[1])}"' if dash else ""
+
+
+def _image_to_svg(p: PImage, crops: Mapping[str, Image.Image] | None) -> str:
+    """Imagen del lente recortada con su forma. Sin recorte disponible no dibuja nada."""
+    if not crops or p.key not in crops:
+        return ""
+    clip_id = f"lens-{p.key}"
+    d = p.dest
+    if p.shape == "circle":
+        shape = f'<circle cx="{_f(d.center[0])}" cy="{_f(d.center[1])}" r="{_f(d.w / 2)}"/>'
+    else:
+        shape = (
+            f'<rect x="{_f(d.x)}" y="{_f(d.y)}" width="{_f(d.w)}" height="{_f(d.h)}" '
+            f'rx="{_f(p.rx)}"/>'
+        )
+    return (
+        f'<clipPath id="{clip_id}">{shape}</clipPath>'
+        f'<image x="{_f(d.x)}" y="{_f(d.y)}" width="{_f(d.w)}" height="{_f(d.h)}" '
+        f'preserveAspectRatio="none" clip-path="url(#{clip_id})" '
+        f'xlink:href="{_png_data_uri(crops[p.key])}"/>'
+    )
+
+
+def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = None) -> str:
+    if isinstance(p, PImage):
+        return _image_to_svg(p, crops)
     if isinstance(p, PRect):
         fill = f'fill="{p.fill}" fill-opacity="{p.fill_opacity}"' if p.fill else 'fill="none"'
         stroke = (
             f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"'
+            f'{_dash(p.dash)}'
             if p.stroke
             else ""
         )
@@ -59,7 +88,11 @@ def primitive_to_svg(p: Primitive) -> str:
         return f'<polygon points="{pts}" {fill} {stroke}/>'
     if isinstance(p, PCircle):
         fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
-        stroke = f'stroke="{p.stroke}" stroke-width="{_f(p.width)}"' if p.stroke else ""
+        stroke = (
+            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash)}'
+            if p.stroke
+            else ""
+        )
         return f'<circle cx="{_f(p.center[0])}" cy="{_f(p.center[1])}" r="{_f(p.r)}" {fill} {stroke}/>'
     if isinstance(p, PText):
         outline = (
@@ -88,8 +121,14 @@ def canvas_size(doc: AnnotationDoc) -> tuple[int, int]:
     return w + 2 * doc.padding, h + 2 * doc.padding
 
 
-def to_svg(doc: AnnotationDoc, base: Image.Image, primitives: Sequence[Primitive]) -> str:
-    """SVG completo: relleno (si hay padding), bitmap ya pixelado y anotaciones."""
+def to_svg(
+    doc: AnnotationDoc,
+    base: Image.Image,
+    primitives: Sequence[Primitive],
+    crops: Mapping[str, Image.Image] | None = None,
+) -> str:
+    """SVG completo: relleno (si hay padding), bitmap ya pixelado y anotaciones.
+    crops son los recortes de las lupas (raster.lens_crops)."""
     width, height = canvas_size(doc)
     pad = doc.padding
     parts = [
@@ -103,7 +142,7 @@ def to_svg(doc: AnnotationDoc, base: Image.Image, primitives: Sequence[Primitive
         f'<image x="0" y="0" width="{doc.image_size[0]}" height="{doc.image_size[1]}" '
         f'xlink:href="{_png_data_uri(base)}"/>'
     )
-    parts.extend(primitive_to_svg(p) for p in primitives)
+    parts.extend(primitive_to_svg(p, crops) for p in primitives)
     parts.append("</g></svg>")
     return "\n".join(parts)
 
@@ -121,7 +160,8 @@ def build_svg(doc: AnnotationDoc) -> str:
             f"La captura cambio de tamano ({image.size[0]}x{image.size[1]}, el proyecto "
             f"esperaba {doc.image_size[0]}x{doc.image_size[1]}). Reabre la captura."
         )
-    return to_svg(doc, apply_redactions(image, doc.items), build_primitives(doc))
+    redacted = apply_redactions(image, doc.items)
+    return to_svg(doc, redacted, build_primitives(doc), lens_crops(redacted, doc.items))
 
 
 def _check_not_original(doc: AnnotationDoc, output_path: Path, allow_overwrite: bool) -> None:

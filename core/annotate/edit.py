@@ -11,10 +11,11 @@ from collections.abc import Sequence
 from dataclasses import replace
 from enum import Enum
 
-from core.annotate import style
+from core.annotate import lens, style
 from core.annotate.model import (
     Annotation,
     Arrow,
+    Magnifier,
     Marker,
     Rect,
     Redaction,
@@ -37,6 +38,7 @@ class Handle(str, Enum):
     W = "w"
     START = "start"
     END = "end"
+    LENS = "lens"
 
 
 _WEST = (Handle.NW, Handle.W, Handle.SW)
@@ -100,7 +102,19 @@ def hit_item(item: Annotation, p: Point, tol: float, scale: float) -> bool:
         return math.hypot(p[0] - item.center[0], p[1] - item.center[1]) <= style.STEP_RADIUS * scale + tol / 2
     if isinstance(item, TextLabel):
         return _contains(label_box(item, scale).inflate(tol / 2), p)
+    if isinstance(item, Magnifier):
+        return hit_lens_part(item, p, tol) is not None
     return False
+
+
+def hit_lens_part(m: Magnifier, p: Point, tol: float) -> str | None:
+    """Que parte de la lupa esta bajo el punto: 'lens' (el cuerpo del lente, gana si
+    se solapan) o 'source' (el borde de la zona de origen)."""
+    if lens.contains_in_lens(m, p):
+        return "lens"
+    if lens.near_source_border(m, p, tol):
+        return "source"
+    return None
 
 
 def hit_test(items: Sequence[Annotation], p: Point, tol: float, scale: float) -> str | None:
@@ -111,16 +125,25 @@ def hit_test(items: Sequence[Annotation], p: Point, tol: float, scale: float) ->
     return None
 
 
+def _rect_handles(r: Rect) -> dict[Handle, Point]:
+    cx, cy = r.center
+    return {
+        Handle.NW: (r.x, r.y), Handle.N: (cx, r.y), Handle.NE: (r.right, r.y),
+        Handle.E: (r.right, cy), Handle.SE: (r.right, r.bottom), Handle.S: (cx, r.bottom),
+        Handle.SW: (r.x, r.bottom), Handle.W: (r.x, cy),
+    }
+
+
 def item_handles(item: Annotation) -> dict[Handle, Point]:
-    """Asas de redimensionado: 8 para rectangulos, 2 para flechas, ninguna para el resto."""
+    """Asas de redimensionado: 8 para rectangulos, 2 para flechas, para la lupa
+    las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom."""
     if isinstance(item, (Marker, Redaction)):
-        r = item.rect
-        cx, cy = r.center
-        return {
-            Handle.NW: (r.x, r.y), Handle.N: (cx, r.y), Handle.NE: (r.right, r.y),
-            Handle.E: (r.right, cy), Handle.SE: (r.right, r.bottom), Handle.S: (cx, r.bottom),
-            Handle.SW: (r.x, r.bottom), Handle.W: (r.x, cy),
-        }
+        return _rect_handles(item.rect)
+    if isinstance(item, Magnifier):
+        handles = _rect_handles(lens.effective_source(item))
+        box = lens.lens_rect(item)
+        handles[Handle.LENS] = (box.right, box.bottom)
+        return handles
     if isinstance(item, Arrow):
         return {Handle.START: item.start, Handle.END: item.end}
     return {}
@@ -147,14 +170,34 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
     if isinstance(item, StepBadge):
         r = style.STEP_RADIUS * scale
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
+    if isinstance(item, Magnifier):
+        return lens.lens_rect(item)
     return label_box(item, scale)
+
+
+def selection_rects(item: Annotation, scale: float) -> list[Rect]:
+    """Cajas a dibujar: la lupa muestra su origen y su lente; el resto, una."""
+    if isinstance(item, Magnifier):
+        return [lens.effective_source(item), lens.lens_rect(item)]
+    return [selection_rect(item, scale)]
 
 
 # --------------------------------------------------------------------------
 # Mover y redimensionar (devuelven una anotacion nueva; las originales son inmutables)
 # --------------------------------------------------------------------------
 
-def move_item(item: Annotation, dx: float, dy: float) -> Annotation:
+def move_item(item: Annotation, dx: float, dy: float, part: str | None = None) -> Annotation:
+    """part solo importa para la lupa: 'lens' mueve el lente, 'source' el origen,
+    otro valor mueve ambos."""
+    if isinstance(item, Magnifier):
+        s, c = item.source, item.lens_center
+        moved_source = Rect(s.x + dx, s.y + dy, s.w, s.h)
+        moved_center = (c[0] + dx, c[1] + dy)
+        if part == "lens":
+            return replace(item, lens_center=moved_center)
+        if part == "source":
+            return replace(item, source=moved_source)
+        return replace(item, source=moved_source, lens_center=moved_center)
     if isinstance(item, (Marker, Redaction)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
@@ -180,10 +223,25 @@ def resize_item(item: Annotation, handle: Handle, p: Point, min_size: float = 4.
         if handle is Handle.END:
             return replace(item, end=p)
         return item
+    if isinstance(item, Magnifier):
+        return _resize_lens(item, handle, p, min_size)
     if not isinstance(item, (Marker, Redaction)):
         return item
+    return replace(item, rect=_resize_rect(item.rect, handle, p, min_size))
 
-    r = item.rect
+
+def _resize_lens(m: Magnifier, handle: Handle, p: Point, min_size: float) -> Magnifier:
+    """El asa LENS cambia el zoom anclando la esquina superior izquierda del lente;
+    las demas redimensionan la zona de origen."""
+    if handle is not Handle.LENS:
+        return replace(m, source=_resize_rect(lens.effective_source(m), handle, p, min_size))
+    box, src = lens.lens_rect(m), lens.effective_source(m)
+    zoom = max((p[0] - box.x) / src.w, (p[1] - box.y) / src.h)
+    zoom = min(max(zoom, lens.MIN_ZOOM), lens.MAX_ZOOM)
+    return replace(m, zoom=zoom, lens_center=(box.x + src.w * zoom / 2, box.y + src.h * zoom / 2))
+
+
+def _resize_rect(r: Rect, handle: Handle, p: Point, min_size: float) -> Rect:
     left, top, right, bottom = r.x, r.y, r.right, r.bottom
     if handle in _WEST:
         left = p[0]
@@ -203,7 +261,7 @@ def resize_item(item: Annotation, handle: Handle, p: Point, min_size: float = 4.
             top = bottom - min_size
         else:
             bottom = top + min_size
-    return replace(item, rect=Rect(left, top, right - left, bottom - top))
+    return Rect(left, top, right - left, bottom - top)
 
 
 def rect_from_points(a: Point, b: Point) -> Rect:

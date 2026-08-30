@@ -24,6 +24,11 @@ class TextAlign(str, Enum):
     CENTER = "center"
 
 
+class LensShape(str, Enum):
+    CIRCLE = "circle"
+    ROUNDED = "rounded"
+
+
 @dataclass(frozen=True)
 class Rect:
     x: float
@@ -113,7 +118,21 @@ class Redaction:
     block: int = 12
 
 
-Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction
+@dataclass(frozen=True)
+class Magnifier:
+    """Lupa: amplia `source` (region de la imagen) en un lente aparte centrado en
+    `lens_center`. El tamano del lente es el del origen por `zoom`; con forma
+    circular el origen se toma como el cuadrado centrado de lado max(w, h)."""
+
+    id: str
+    source: Rect
+    lens_center: tuple[float, float]
+    zoom: float = 2.0
+    shape: LensShape = LensShape.CIRCLE
+    connector: bool = True
+
+
+Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier
 
 
 @dataclass

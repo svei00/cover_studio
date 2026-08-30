@@ -10,7 +10,8 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from core.annotate.errors import AnnotateError
-from core.annotate.model import Annotation, Redaction
+from core.annotate import lens
+from core.annotate.model import Annotation, Magnifier, Redaction
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES
 
 
@@ -48,3 +49,17 @@ def apply_redactions(img: Image.Image, items: Sequence[Annotation]) -> Image.Ima
         small = region.resize((max(1, round(w / block)), max(1, round(h / block))), Image.BOX)
         out.paste(small.resize((w, h), Image.NEAREST), (x0, y0))
     return out
+
+
+def lens_crops(img: Image.Image, items: Sequence[Annotation]) -> dict[str, Image.Image]:
+    """Un recorte por lupa, ampliado con LANCZOS al tamano de su lente. Se toma de
+    la imagen que se le pase: debe ser la YA pixelada, para que un dato
+    anonimizado no reaparezca dentro de una lupa."""
+    crops: dict[str, Image.Image] = {}
+    for item in items:
+        if not isinstance(item, Magnifier):
+            continue
+        width, height = lens.lens_size(item)
+        size = (max(1, round(width)), max(1, round(height)))
+        crops[item.id] = img.crop(lens.crop_box(item)).resize(size, Image.LANCZOS)
+    return crops
