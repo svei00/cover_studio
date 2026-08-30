@@ -4,10 +4,21 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: **fases 1 y 2 hechas** (`core/annotate/`: style, model, primitives,
-text_measure, errors, raster, svg, io; 52 tests). Ya se puede anotar y exportar
-desde código o desde un JSON sin abrir ventana. Pendiente: UI (fases 3-4), lupa
-(`Magnifier`, fase 5), pulido (fase 6).
+Estado: **fases 1, 2 y 3 hechas.**
+- `core/annotate/` (style, model, primitives, text_measure, errors, raster, svg, io).
+- `ui/annotate/` (painter, canvas, tab) + `ui/dialogs.py`; `main_window.py` ahora
+  es un `QTabWidget` "Portada" | "Anotar". La pestaña abre, pega (`CTRL + V`) y
+  recibe arrastres; muestra la captura con sus anotaciones; exporta PNG/SVG con la
+  guarda de sobrescritura. Aún no se puede crear anotaciones con el mouse.
+- 69 tests de anotaciones. Los de UI corren con `QT_QPA_PLATFORM=offscreen`, que en
+  Windows no tiene fuentes: el texto sale como cuadros en `grab()`. Para revisar a
+  ojo, renderizar con la plataforma `windows` (la ventana no necesita verse).
+
+Pendiente: herramientas interactivas (fase 4), lupa (`Magnifier`, fase 5), pulido (fase 6).
+
+Decisión de la fase 3: al exportar SOBRE la captura original, se respalda como
+`<nombre>.original.<ext>` y la pestaña sigue editando contra el respaldo (así el
+proyecto `.anotar.json` nunca apunta a un archivo ya anotado).
 
 Nota: en el código, `Magnifier` todavía no existe en el modelo; entra en la fase 5.
 La firma `Annotation` hoy es `Marker | Arrow | StepBadge | TextLabel | Redaction`.

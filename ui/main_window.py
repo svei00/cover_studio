@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFontComboBox,
     QGroupBox,
@@ -29,7 +28,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QSplitter,
-    QStyle,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -47,6 +46,8 @@ from core.geometry import (
 )
 from core.presets import PresetError, list_presets, load_preset, save_preset
 from core.text_utils import normalize_title, wrap_title
+from ui.annotate.tab import AnnotateTab
+from ui.dialogs import OverwriteConfirmDialog
 from ui.preview import PreviewWidget
 from ui.widgets import ColorPickerButton, SliderSpinBox
 
@@ -111,50 +112,6 @@ def _row(label_text: str, widget: QWidget) -> QWidget:
     return container
 
 
-class OverwriteConfirmDialog(QDialog):
-    """Exige escribir SOBRESCRIBIR para habilitar el boton de confirmar,
-    con friccion real antes de perder la foto original sin banner."""
-
-    CONFIRM_WORD = "SOBRESCRIBIR"
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Confirmar sobrescritura")
-
-        icon_label = QLabel()
-        style = self.style()
-        if style is not None:
-            icon_label.setPixmap(style.standardIcon(QStyle.SP_MessageBoxWarning).pixmap(32, 32))
-
-        message = QLabel(
-            "Vas a sobrescribir la imagen original. Esta accion no se puede "
-            "deshacer y perderas la foto limpia sin banner."
-        )
-        message.setWordWrap(True)
-
-        header = QHBoxLayout()
-        header.addWidget(icon_label)
-        header.addWidget(message, stretch=1)
-
-        self._input = QLineEdit()
-        self._input.setPlaceholderText(f"Escribe {self.CONFIRM_WORD} para continuar")
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self._ok_button = buttons.button(QDialogButtonBox.Ok)
-        self._ok_button.setText("Sobrescribir")
-        self._ok_button.setEnabled(False)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        self._input.textChanged.connect(
-            lambda text: self._ok_button.setEnabled(text == self.CONFIRM_WORD)
-        )
-
-        layout = QVBoxLayout(self)
-        layout.addLayout(header)
-        layout.addWidget(self._input)
-        layout.addWidget(buttons)
-
-
 class MainWindow(QMainWindow):
     """Ventana principal: entradas, panel de diseno, vista previa y generacion."""
 
@@ -183,9 +140,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
+        cover_page = QWidget()
+        root_layout = QVBoxLayout(cover_page)
 
         root_layout.addLayout(self._build_preset_bar())
 
@@ -196,6 +152,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._build_preview_panel())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+
+        self.annotate_tab = AnnotateTab()
+        self.annotate_tab.statusMessage.connect(self.statusBar().showMessage)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(cover_page, "Portada")
+        self.tabs.addTab(self.annotate_tab, "Anotar")
+        self.setCentralWidget(self.tabs)
 
         self._connect_preview_triggers()
         self.statusBar().showMessage("Listo.")
@@ -823,7 +787,10 @@ class MainWindow(QMainWindow):
         for url in event.mimeData().urls():
             path = Path(url.toLocalFile())
             if path.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES:
-                self._set_photo(path)
+                if self.tabs.currentWidget() is self.annotate_tab:
+                    self.annotate_tab.load_capture(path)
+                else:
+                    self._set_photo(path)
                 break
 
     # ------------------------------------------------------------------
