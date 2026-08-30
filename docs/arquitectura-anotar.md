@@ -4,8 +4,10 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: **fase 1 hecha** (`core/annotate/`: style, model, primitives, text_measure,
-con 26 tests). Pendiente: raster/svg/io, UI, lupa (`Magnifier`).
+Estado: **fases 1 y 2 hechas** (`core/annotate/`: style, model, primitives,
+text_measure, errors, raster, svg, io; 52 tests). Ya se puede anotar y exportar
+desde código o desde un JSON sin abrir ventana. Pendiente: UI (fases 3-4), lupa
+(`Magnifier`, fase 5), pulido (fase 6).
 
 Nota: en el código, `Magnifier` todavía no existe en el modelo; entra en la fase 5.
 La firma `Annotation` hoy es `Marker | Arrow | StepBadge | TextLabel | Redaction`.
