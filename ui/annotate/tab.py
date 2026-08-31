@@ -1,5 +1,5 @@
-"""Pestana "Anotar": abre o pega una captura, la muestra con sus anotaciones y
-la exporta. Las herramientas interactivas llegan en la fase 4."""
+"""Pestana "Anotar": abre o pega una captura, permite anotarla con el mouse
+(marcador, flecha, paso, texto, pixelado) con deshacer/rehacer, y la exporta."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QImage, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QDialog,
     QFileDialog,
@@ -20,18 +21,21 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
-from core.annotate.model import AnnotationDoc
+from core.annotate.model import AnnotationDoc, Redaction
 from core.annotate.primitives import build_primitives
 from core.annotate.raster import apply_redactions, load_image
 from core.annotate.svg import default_output_path, export_png, export_svg
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import AnnotateCanvas
+from ui.annotate.controller import EditController, Tool
+from ui.annotate.panel import PropertiesPanel
 from ui.dialogs import OverwriteConfirmDialog
 
 
@@ -45,6 +49,16 @@ def pil_to_qimage(img: Image.Image) -> QImage:
     rgba = img.convert("RGBA")
     qimage = QImage(rgba.tobytes("raw", "RGBA"), rgba.width, rgba.height, rgba.width * 4, QImage.Format_RGBA8888)
     return qimage.copy()  # desacopla el QImage del buffer temporal de Python
+
+
+TOOL_BUTTONS = (
+    (Tool.SELECT, "Seleccionar", "Selecciona, mueve y redimensiona anotaciones"),
+    (Tool.MARKER, "Marcador", "Recuadro con resplandor dorado y flecha: arrastra sobre la captura"),
+    (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
+    (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
+    (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
+    (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
+)
 
 
 class AnnotateTab(QWidget):
@@ -72,15 +86,78 @@ class AnnotateTab(QWidget):
         bar.addWidget(self.svg_checkbox)
         bar.addWidget(self.export_btn)
 
+        self.controller = EditController(self)
         self.canvas = AnnotateCanvas()
+        self.canvas.set_controller(self.controller)
+        self.panel = PropertiesPanel(self.controller)
+        self._base_key: tuple | None = None
+        self._base_qimage: QImage | None = None
+
+        tools = QHBoxLayout()
+        self.tool_buttons: dict[Tool, QToolButton] = {}
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        for tool, label, tip in TOOL_BUTTONS:
+            button = QToolButton()
+            button.setText(label)
+            button.setToolTip(tip)
+            button.setCheckable(True)
+            button.setEnabled(False)
+            button.clicked.connect(lambda _checked, t=tool: self.controller.set_tool(t))
+            group.addButton(button)
+            self.tool_buttons[tool] = button
+            tools.addWidget(button)
+        self.tool_buttons[Tool.SELECT].setChecked(True)
+        tools.addSpacing(16)
+        self.undo_btn = QToolButton()
+        self.undo_btn.setText("Deshacer")
+        self.undo_btn.setToolTip("CTRL + Z")
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.clicked.connect(self.controller.undo)
+        self.redo_btn = QToolButton()
+        self.redo_btn.setText("Rehacer")
+        self.redo_btn.setToolTip("CTRL + Y")
+        self.redo_btn.setEnabled(False)
+        self.redo_btn.clicked.connect(self.controller.redo)
+        self.delete_btn = QToolButton()
+        self.delete_btn.setText("Borrar")
+        self.delete_btn.setToolTip("Suprimir, con la captura enfocada")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.clicked.connect(self.controller.delete_selected)
+        for widget in (self.undo_btn, self.redo_btn, self.delete_btn):
+            tools.addWidget(widget)
+        tools.addStretch(1)
+
+        body = QHBoxLayout()
+        body.addWidget(self.canvas, stretch=1)
+        body.addWidget(self.panel)
 
         layout = QVBoxLayout(self)
         layout.addLayout(bar)
-        layout.addWidget(self.canvas, stretch=1)
+        layout.addLayout(tools)
+        layout.addLayout(body, stretch=1)
 
-        paste_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Paste), self)
-        paste_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        paste_shortcut.activated.connect(self.paste_capture)
+        self.controller.changed.connect(self.refresh)
+        self.controller.toolChanged.connect(self._on_tool_changed)
+        self.controller.selectionChanged.connect(self._update_history_buttons)
+        self.controller.stack.canUndoChanged.connect(self._update_history_buttons)
+        self.controller.stack.canRedoChanged.connect(self._update_history_buttons)
+
+        for key, slot in ((QKeySequence.StandardKey.Paste, self.paste_capture),
+                          (QKeySequence.StandardKey.Undo, self.controller.undo),
+                          (QKeySequence.StandardKey.Redo, self.controller.redo)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
+
+    def _on_tool_changed(self, tool: Tool) -> None:
+        self.tool_buttons[tool].setChecked(True)
+
+    def _update_history_buttons(self) -> None:
+        stack = self.controller.stack
+        self.undo_btn.setEnabled(stack.canUndo())
+        self.redo_btn.setEnabled(stack.canRedo())
+        self.delete_btn.setEnabled(self.controller.selected_item() is not None)
 
     # ------------------------------------------------------------------
     # Cargar
@@ -147,8 +224,11 @@ class AnnotateTab(QWidget):
 
         self.base_image = image
         self.doc = doc
+        self._base_key = None
         self.export_btn.setEnabled(True)
-        self.refresh()
+        for button in self.tool_buttons.values():
+            button.setEnabled(True)
+        self.controller.set_doc(doc)
         self.statusMessage.emit(f"Captura abierta: {path}{note}")
 
     def refresh(self) -> None:
@@ -157,8 +237,12 @@ class AnnotateTab(QWidget):
             self.canvas.set_content(None, [])
             self.info_label.setText("Sin captura.")
             return
-        redacted = apply_redactions(self.base_image, self.doc.items)
-        self.canvas.set_content(pil_to_qimage(redacted), build_primitives(self.doc))
+        # el bitmap pixelado solo se recalcula si cambiaron los pixelados
+        key = tuple(i for i in self.doc.items if isinstance(i, Redaction))
+        if key != self._base_key or self._base_qimage is None:
+            self._base_qimage = pil_to_qimage(apply_redactions(self.base_image, self.doc.items))
+            self._base_key = key
+        self.canvas.set_content(self._base_qimage, build_primitives(self.doc))
         w, h = self.doc.image_size
         self.info_label.setText(f"{self.doc.image_path.name} - {w} x {h} px - {len(self.doc.items)} anotaciones")
 

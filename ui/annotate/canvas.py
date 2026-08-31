@@ -1,18 +1,28 @@
-"""Lienzo que muestra la captura con sus anotaciones, ajustada a la ventana."""
+"""Lienzo que muestra la captura con sus anotaciones, ajustada a la ventana, y
+reenvia el mouse y el teclado al EditController."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from core.annotate import edit
+from core.annotate.model import Arrow
 from core.annotate.primitives import Primitive
+from core.annotate.style import CARD_FILL
+from ui.annotate.controller import EditController
 from ui.annotate.painter import paint_primitives
 
 MARGIN = 12
 MAX_ZOOM = 2.0
+TOLERANCE_PX = 8.0  # tolerancia de clic en pixeles de pantalla
+HANDLE_PX = 9.0
+SELECTION_COLOR = "#4DA3FF"
+NUDGE = 1.0
+NUDGE_BIG = 10.0
 HINT = "Arrastra una captura aqui, usa Abrir... o presiona CTRL + V"
 
 
@@ -21,18 +31,34 @@ class AnnotateCanvas(QWidget):
         super().__init__(parent)
         self.setMinimumSize(480, 320)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._image: QImage | None = None
         self._primitives: list[Primitive] = []
+        self._controller: EditController | None = None
+
+    def set_controller(self, controller: EditController) -> None:
+        self._controller = controller
+        controller.selectionChanged.connect(self.update)
+        controller.toolChanged.connect(lambda _tool: self.update())
 
     def set_content(self, image: QImage | None, primitives: Sequence[Primitive]) -> None:
         self._image = image
         self._primitives = list(primitives)
         self.update()
 
+    # ------------------------------------------------------------------
+    # Vista
+    # ------------------------------------------------------------------
+
+    def has_image(self) -> bool:
+        return self._image is not None and not self._image.isNull()
+
     def view_layout(self) -> tuple[float, float, float]:
         """(escala, offset_x, offset_y) que ajustan la imagen al widget, centrada."""
-        if self._image is None or self._image.isNull():
+        if not self.has_image():
             return 1.0, 0.0, 0.0
+        assert self._image is not None
         avail_w = max(1, self.width() - 2 * MARGIN)
         avail_h = max(1, self.height() - 2 * MARGIN)
         scale = min(MAX_ZOOM, avail_w / self._image.width(), avail_h / self._image.height())
@@ -40,16 +66,108 @@ class AnnotateCanvas(QWidget):
         oy = (self.height() - self._image.height() * scale) / 2
         return scale, ox, oy
 
+    def view_to_image(self, pos: QPointF) -> tuple[float, float]:
+        scale, ox, oy = self.view_layout()
+        return (pos.x() - ox) / scale, (pos.y() - oy) / scale
+
+    def image_to_view(self, point: tuple[float, float]) -> QPointF:
+        scale, ox, oy = self.view_layout()
+        return QPointF(ox + point[0] * scale, oy + point[1] * scale)
+
+    def _tolerance(self) -> float:
+        """Tolerancia de clic convertida a pixeles de imagen."""
+        return TOLERANCE_PX / self.view_layout()[0]
+
+    # ------------------------------------------------------------------
+    # Pintado
+    # ------------------------------------------------------------------
+
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#202020"))
-        if self._image is None or self._image.isNull():
+        if not self.has_image():
             painter.setPen(QColor("#AAAAAA"))
             painter.drawText(self.rect(), Qt.AlignCenter, HINT)
             return
+        assert self._image is not None
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing)
         scale, ox, oy = self.view_layout()
+        painter.save()
         painter.translate(ox, oy)
         painter.scale(scale, scale)
         painter.drawImage(0, 0, self._image)
         paint_primitives(painter, self._primitives)
+        painter.restore()
+        self._paint_selection(painter)
+
+    def _paint_selection(self, painter: QPainter) -> None:
+        """Caja y asas de la anotacion seleccionada, en pixeles de pantalla (no
+        forman parte de la imagen exportada)."""
+        if self._controller is None:
+            return
+        item = self._controller.selected_item()
+        if item is None:
+            return
+        handles = edit.item_handles(item)
+        if not isinstance(item, Arrow):
+            box = edit.selection_rect(item, self._controller.scale())
+            top_left = self.image_to_view((box.x, box.y))
+            bottom_right = self.image_to_view((box.right, box.bottom))
+            pen = QPen(QColor(SELECTION_COLOR), 1.5, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(QRectF(top_left, bottom_right).adjusted(-4, -4, 4, 4))
+        painter.setPen(QPen(QColor(CARD_FILL), 1.5))
+        painter.setBrush(QColor("#FFFFFF"))
+        half = HANDLE_PX / 2
+        for point in handles.values():
+            c = self.image_to_view(point)
+            painter.drawRect(QRectF(c.x() - half, c.y() - half, HANDLE_PX, HANDLE_PX))
+
+    # ------------------------------------------------------------------
+    # Mouse y teclado
+    # ------------------------------------------------------------------
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if event.button() != Qt.LeftButton or self._controller is None or not self.has_image():
+            return
+        self.setFocus()
+        self._controller.press(self.view_to_image(event.position()), self._tolerance())
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if self._controller is None or not self.has_image():
+            return
+        point = self.view_to_image(event.position())
+        if event.buttons() & Qt.LeftButton:
+            self._controller.move(point)
+        else:
+            self.setCursor(self._controller.cursor_at(point, self._tolerance()))
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if event.button() != Qt.LeftButton or self._controller is None or not self.has_image():
+            return
+        point = self.view_to_image(event.position())
+        self._controller.release(point)
+        self.setCursor(self._controller.cursor_at(point, self._tolerance()))
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 (Qt override)
+        c = self._controller
+        if c is None:
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        step = NUDGE_BIG if event.modifiers() & Qt.ShiftModifier else NUDGE
+        if key in (Qt.Key_Delete, Qt.Key_Backspace):
+            c.delete_selected()
+        elif key == Qt.Key_Escape:
+            c.cancel()
+        elif key == Qt.Key_Left:
+            c.nudge(-step, 0.0)
+        elif key == Qt.Key_Right:
+            c.nudge(step, 0.0)
+        elif key == Qt.Key_Up:
+            c.nudge(0.0, -step)
+        elif key == Qt.Key_Down:
+            c.nudge(0.0, step)
+        else:
+            super().keyPressEvent(event)

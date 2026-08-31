@@ -4,7 +4,19 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: **fases 1, 2 y 3 hechas.**
+Estado: **fases 1, 2, 3 y 4 hechas.** Fase 4: edición interactiva.
+- `core/annotate/edit.py` (puro): hit-testing, asas, mover y redimensionar.
+- `ui/annotate/controller.py`: herramienta, selección, gestos y pila de deshacer/rehacer
+  (`QUndoStack`). Los gestos modifican el documento en vivo y al soltar empujan UN
+  comando idempotente; los cambios seguidos de propiedades y los empujones con
+  flechas se fusionan en un solo paso.
+- `ui/annotate/panel.py`: propiedades por tipo. `ui/annotate/canvas.py`: mouse,
+  teclado (Suprimir, Esc, flechas, MAYÚS para 10 px), caja y asas de selección.
+- Herramientas: Seleccionar, Marcador, Flecha, Paso, Texto, Pixelar. Cada una
+  vuelve a Seleccionar tras dibujar. Un clic o arrastre minúsculo no crea nada.
+- 163 + 16 pruebas de interacción con eventos de mouse y teclado reales.
+
+(Lo de abajo describe las fases 1-3, ya implementadas.)
 - `core/annotate/` (style, model, primitives, text_measure, errors, raster, svg, io).
 - `ui/annotate/` (painter, canvas, tab) + `ui/dialogs.py`; `main_window.py` ahora
   es un `QTabWidget` "Portada" | "Anotar". La pestaña abre, pega (`CTRL + V`) y
