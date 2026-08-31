@@ -36,6 +36,8 @@ MIN_ARROW = 8.0
 MIN_LENS_SOURCE = 12.0
 PROPERTY_MERGE_ID = 1000
 NUDGE_MERGE_ID = 1001
+PADDING_MERGE_ID = 1002
+SCALE_MERGE_ID = 1003
 DEFAULT_REDACTION_BLOCK = 12
 
 
@@ -107,6 +109,36 @@ class _ReplaceCommand(QUndoCommand):
 
     def mergeWith(self, other: QUndoCommand) -> bool:  # noqa: N802 (override de Qt)
         if not isinstance(other, _ReplaceCommand) or other._new.id != self._new.id:
+            return False
+        self._new = other._new
+        return True
+
+
+class _DocPropertyCommand(QUndoCommand):
+    """Cambia una propiedad del documento (margen, escala de trazo). Los cambios
+    seguidos de la misma propiedad se fusionan en un solo paso."""
+
+    def __init__(
+        self, controller: EditController, attr: str, old: object, new: object, text: str, merge_id: int
+    ) -> None:
+        super().__init__(text)
+        self._controller = controller
+        self._attr = attr
+        self._old = old
+        self._new = new
+        self._merge_id = merge_id
+
+    def id(self) -> int:  # noqa: A003 (override de Qt)
+        return self._merge_id
+
+    def redo(self) -> None:
+        self._controller._set_doc_property(self._attr, self._new)
+
+    def undo(self) -> None:
+        self._controller._set_doc_property(self._attr, self._old)
+
+    def mergeWith(self, other: QUndoCommand) -> bool:  # noqa: N802 (override de Qt)
+        if not isinstance(other, _DocPropertyCommand) or other._attr != self._attr:
             return False
         self._new = other._new
         return True
@@ -203,6 +235,30 @@ class EditController(QObject):
             return
         self.doc.items[index] = item
         self.changed.emit()
+
+    def _set_doc_property(self, attr: str, value: object) -> None:
+        if self.doc is None:
+            return
+        setattr(self.doc, attr, value)
+        self.changed.emit()
+
+    def set_padding(self, padding: int) -> None:
+        """Margen extra alrededor de la imagen (para que no se recorte el resplandor)."""
+        if self.doc is None:
+            return
+        padding = max(0, int(padding))
+        if padding != self.doc.padding:
+            self.stack.push(
+                _DocPropertyCommand(self, "padding", self.doc.padding, padding, "Margen", PADDING_MERGE_ID)
+            )
+
+    def set_style_scale(self, scale: float | None) -> None:
+        """Escala de los trazos; None = automatica (segun el ancho de la imagen)."""
+        if self.doc is None or scale == self.doc.style_scale:
+            return
+        self.stack.push(
+            _DocPropertyCommand(self, "style_scale", self.doc.style_scale, scale, "Escala", SCALE_MERGE_ID)
+        )
 
     # ------------------------------------------------------------------
     # Gestos del mouse (coordenadas en pixeles de imagen)

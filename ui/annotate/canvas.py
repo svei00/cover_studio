@@ -36,6 +36,7 @@ class AnnotateCanvas(QWidget):
         self._image: QImage | None = None
         self._primitives: list[Primitive] = []
         self._lens_images: Mapping[str, QImage] = {}
+        self._padding = 0
         self._controller: EditController | None = None
 
     def set_controller(self, controller: EditController) -> None:
@@ -48,10 +49,12 @@ class AnnotateCanvas(QWidget):
         image: QImage | None,
         primitives: Sequence[Primitive],
         lens_images: Mapping[str, QImage] | None = None,
+        padding: int = 0,
     ) -> None:
         self._image = image
         self._primitives = list(primitives)
         self._lens_images = lens_images or {}
+        self._padding = max(0, padding)
         self.update()
 
     # ------------------------------------------------------------------
@@ -66,20 +69,22 @@ class AnnotateCanvas(QWidget):
         if not self.has_image():
             return 1.0, 0.0, 0.0
         assert self._image is not None
+        content_w = self._image.width() + 2 * self._padding  # el margen extra tambien se ve
+        content_h = self._image.height() + 2 * self._padding
         avail_w = max(1, self.width() - 2 * MARGIN)
         avail_h = max(1, self.height() - 2 * MARGIN)
-        scale = min(MAX_ZOOM, avail_w / self._image.width(), avail_h / self._image.height())
-        ox = (self.width() - self._image.width() * scale) / 2
-        oy = (self.height() - self._image.height() * scale) / 2
+        scale = min(MAX_ZOOM, avail_w / content_w, avail_h / content_h)
+        ox = (self.width() - content_w * scale) / 2
+        oy = (self.height() - content_h * scale) / 2
         return scale, ox, oy
 
     def view_to_image(self, pos: QPointF) -> tuple[float, float]:
         scale, ox, oy = self.view_layout()
-        return (pos.x() - ox) / scale, (pos.y() - oy) / scale
+        return (pos.x() - ox) / scale - self._padding, (pos.y() - oy) / scale - self._padding
 
     def image_to_view(self, point: tuple[float, float]) -> QPointF:
         scale, ox, oy = self.view_layout()
-        return QPointF(ox + point[0] * scale, oy + point[1] * scale)
+        return QPointF(ox + (point[0] + self._padding) * scale, oy + (point[1] + self._padding) * scale)
 
     def _tolerance(self) -> float:
         """Tolerancia de clic convertida a pixeles de imagen."""
@@ -102,6 +107,13 @@ class AnnotateCanvas(QWidget):
         painter.save()
         painter.translate(ox, oy)
         painter.scale(scale, scale)
+        total_w = self._image.width() + 2 * self._padding
+        total_h = self._image.height() + 2 * self._padding
+        # solo se ve lo que se exportaria: lo que se sale de la imagen mas su margen se recorta
+        painter.setClipRect(QRectF(0, 0, total_w, total_h))
+        if self._padding:
+            painter.fillRect(QRectF(0, 0, total_w, total_h), QColor(CARD_FILL))
+            painter.translate(self._padding, self._padding)
         painter.drawImage(0, 0, self._image)
         paint_primitives(painter, self._primitives, self._lens_images)
         painter.restore()

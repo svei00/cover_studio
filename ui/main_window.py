@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):
 
         self.annotate_tab = AnnotateTab()
         self.annotate_tab.statusMessage.connect(self.statusBar().showMessage)
+        self.annotate_tab.dirtyChanged.connect(self._on_annotate_dirty_changed)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(cover_page, "Portada")
@@ -163,6 +164,16 @@ class MainWindow(QMainWindow):
 
         self._connect_preview_triggers()
         self.statusBar().showMessage("Listo.")
+
+    def _on_annotate_dirty_changed(self, dirty: bool) -> None:
+        index = self.tabs.indexOf(self.annotate_tab)
+        self.tabs.setTabText(index, "Anotar *" if dirty else "Anotar")
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if self.annotate_tab.confirm_discard():
+            super().closeEvent(event)
+        else:
+            event.ignore()
 
     def _connect_preview_triggers(self) -> None:
         """Cualquier control que cambie el diseno o el contenido debe

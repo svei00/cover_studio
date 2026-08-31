@@ -24,7 +24,7 @@ from core.annotate.primitives import (
     build_primitives,
 )
 from core.annotate.raster import apply_redactions, lens_crops, load_image
-from core.geometry import escape_xml, render_png
+from core.geometry import escape_xml, render_png, render_png_bytes
 
 
 def _f(value: float) -> str:
@@ -169,6 +169,12 @@ def _check_not_original(doc: AnnotationDoc, output_path: Path, allow_overwrite: 
         raise AnnotateError(
             "La ruta de salida es la captura original. Elige otra ruta o confirma la sobrescritura."
         )
+
+
+def render_bytes(doc: AnnotationDoc) -> bytes:
+    """PNG de la captura anotada en memoria (para el portapapeles), sin tocar disco."""
+    width, height = canvas_size(doc)
+    return render_png_bytes(build_svg(doc), width, height)
 
 
 def export_png(doc: AnnotationDoc, output_path: Path, allow_overwrite: bool = False) -> None:

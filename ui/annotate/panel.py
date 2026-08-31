@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QLabel,
     QPlainTextEdit,
     QPushButton,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.annotate.bounds import required_padding
 from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
 from core.annotate.model import (
     Arrow,
@@ -29,7 +31,8 @@ from core.annotate.model import (
     TextAlign,
     TextLabel,
 )
-from core.annotate.style import TEXT_PRESETS
+from core.annotate.primitives import doc_scale
+from core.annotate.style import MAX_SCALE, MIN_SCALE, TEXT_PRESETS
 from ui.annotate.controller import EditController
 
 ARROW_LABELS = {
@@ -60,9 +63,7 @@ class PropertiesPanel(QWidget):
         self._title.setFont(font)
 
         self._pages = QStackedWidget()
-        hint = QLabel("Selecciona una anotacion para editarla, o elige una herramienta y dibuja sobre la captura.")
-        hint.setWordWrap(True)
-        self._pages.addWidget(hint)
+        self._pages.addWidget(self._build_document_page())
         self._pages.addWidget(self._build_marker_page())
         self._pages.addWidget(self._build_arrow_page())
         self._pages.addWidget(self._build_step_page())
@@ -82,6 +83,61 @@ class PropertiesPanel(QWidget):
     # ------------------------------------------------------------------
     # Paginas
     # ------------------------------------------------------------------
+
+    def _build_document_page(self) -> QWidget:
+        """Pagina sin seleccion: ayuda breve y propiedades del documento."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        hint = QLabel("Selecciona una anotacion para editarla, o elige una herramienta y dibuja sobre la captura.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._doc_group = QGroupBox("Documento")
+        form = QFormLayout(self._doc_group)
+        self._padding_spin = QSpinBox()
+        self._padding_spin.setRange(0, 400)
+        self._padding_spin.setSuffix(" px")
+        self._padding_spin.setToolTip("Margen extra alrededor de la captura, para que el resplandor no se recorte")
+        self._padding_spin.valueChanged.connect(self._on_padding_changed)
+        self._scale_auto = QCheckBox("Escala automatica")
+        self._scale_auto.setToolTip("Los trazos se escalan segun el ancho de la captura")
+        self._scale_auto.toggled.connect(self._on_scale_auto_toggled)
+        self._scale_spin = QDoubleSpinBox()
+        self._scale_spin.setRange(MIN_SCALE, MAX_SCALE)
+        self._scale_spin.setSingleStep(0.1)
+        self._scale_spin.setDecimals(2)
+        self._scale_spin.valueChanged.connect(self._on_scale_changed)
+        self._clip_notice = QLabel()
+        self._clip_notice.setWordWrap(True)
+        self._clip_notice.setStyleSheet("color: #E8B95C;")
+        self._clip_btn = QPushButton()
+        self._clip_btn.clicked.connect(self._on_add_padding_clicked)
+        form.addRow("Margen extra", self._padding_spin)
+        form.addRow(self._scale_auto)
+        form.addRow("Escala de trazo", self._scale_spin)
+        form.addRow(self._clip_notice)
+        form.addRow(self._clip_btn)
+        layout.addWidget(self._doc_group)
+        layout.addStretch(1)
+        return page
+
+    def _on_padding_changed(self, value: int) -> None:
+        if not self._syncing:
+            self._c.set_padding(value)
+
+    def _on_scale_auto_toggled(self, auto: bool) -> None:
+        if self._syncing or self._c.doc is None:
+            return
+        self._c.set_style_scale(None if auto else round(doc_scale(self._c.doc), 2))
+
+    def _on_scale_changed(self, value: float) -> None:
+        if not self._syncing and not self._scale_auto.isChecked():
+            self._c.set_style_scale(round(value, 2))
+
+    def _on_add_padding_clicked(self) -> None:
+        if self._c.doc is not None:
+            self._c.set_padding(required_padding(self._c.doc))
 
     def _build_marker_page(self) -> QWidget:
         page = QWidget()
@@ -257,8 +313,31 @@ class PropertiesPanel(QWidget):
             else:
                 self._pages.setCurrentIndex(_PAGE_EMPTY)
                 self._title.setText("Propiedades")
+            self._sync_document()
         finally:
             self._syncing = False
+
+    def _sync_document(self) -> None:
+        doc = self._c.doc
+        self._doc_group.setVisible(doc is not None)
+        if doc is None:
+            return
+        if self._padding_spin.value() != doc.padding:
+            self._padding_spin.setValue(doc.padding)
+        auto = doc.style_scale is None
+        self._scale_auto.setChecked(auto)
+        self._scale_spin.setEnabled(not auto)
+        shown = round(doc_scale(doc), 2)
+        if abs(self._scale_spin.value() - shown) > 1e-9:
+            self._scale_spin.setValue(shown)
+        # el aviso del recorte solo se calcula con la pagina visible (no durante los arrastres)
+        needed = required_padding(doc) if self._pages.currentIndex() == _PAGE_EMPTY else 0
+        clipped = needed > doc.padding
+        self._clip_notice.setVisible(clipped)
+        self._clip_btn.setVisible(clipped)
+        if clipped:
+            self._clip_notice.setText("El resplandor o alguna etiqueta se recorta en el borde de la captura.")
+            self._clip_btn.setText(f"Agregar margen de {needed} px")
 
     @staticmethod
     def _set_combo(combo: QComboBox, data: str) -> None:

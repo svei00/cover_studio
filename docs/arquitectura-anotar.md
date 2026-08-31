@@ -4,7 +4,26 @@ Editor de capturas dentro de Cover Studio: marcador con resplandor, flechas,
 pasos numerados, pixelado para anonimizar y lupa. Mantiene la identidad visual
 de `excel-solutions-social` (`infographic_builder.py`).
 
-Estado: **fases 1 a 5 hechas.** Solo falta la fase 6 (pulido).
+Estado: **las 6 fases hechas.**
+
+Fase 6, pulido:
+- Margen extra alrededor de la captura (`AnnotationDoc.padding`) y escala de trazo
+  manual o automatica, ambos con deshacer (`_DocPropertyCommand`, que fusiona los
+  cambios seguidos de la misma propiedad).
+- `core/annotate/bounds.py`: `required_padding(doc)` calcula, a partir de lo realmente
+  dibujado (resplandor, flechas, etiquetas), cuantos px de margen evitan el recorte.
+  El panel avisa y ofrece "Agregar margen de N px"; al exportar tambien avisa.
+- El lienzo recorta lo que se sale del area exportada (imagen + margen): la pantalla
+  muestra lo mismo que saldra en el PNG.
+- Guardar proyecto (CTRL + S), abrir `.anotar.json` desde "Abrir...", Copiar al
+  portapapeles (CTRL + C, `render_bytes`).
+- Estado "sin guardar" = `not QUndoStack.isClean()`: volver con deshacer al estado
+  guardado lo deja limpio. Confirma antes de abrir otra captura o cerrar la ventana;
+  la pestaña muestra un asterisco.
+- 283 pruebas en total. `tests/conftest.py` descarta por defecto el dialogo de cambios
+  sin guardar (es modal: sin esto una prueba se queda esperando para siempre).
+
+Fase 5, la lupa (resumen original):
 
 Fase 5, la lupa (`Magnifier`):
 - `core/annotate/lens.py` (puro): origen efectivo (circular = cuadrado de lado max(w,h)),
