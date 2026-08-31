@@ -20,6 +20,7 @@ from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
+    ArrowSide,
     Magnifier,
     Marker,
     Rect,
@@ -44,6 +45,7 @@ DEFAULT_REDACTION_BLOCK = 12
 class Tool(str, Enum):
     SELECT = "select"
     MARKER = "marker"
+    MARKER_PLAIN = "marker-plain"
     ARROW = "arrow"
     STEP = "step"
     TEXT = "text"
@@ -270,7 +272,7 @@ class EditController(QObject):
         p = edit.clamp_point(point, self.doc.image_size)
         if self.tool is Tool.SELECT:
             self._press_select(p, tol)
-        elif self.tool in (Tool.MARKER, Tool.REDACT, Tool.ARROW, Tool.LENS):
+        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.REDACT, Tool.ARROW, Tool.LENS):
             self._begin_create(p)
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
@@ -299,6 +301,8 @@ class EditController(QObject):
         item_id = edit.new_id(self.doc.items)
         if self.tool is Tool.MARKER:
             item: Annotation = Marker(item_id, Rect(p[0], p[1], 0.0, 0.0))
+        elif self.tool is Tool.MARKER_PLAIN:
+            item = Marker(item_id, Rect(p[0], p[1], 0.0, 0.0), arrow=ArrowSide.NONE)
         elif self.tool is Tool.REDACT:
             block = max(6, round(DEFAULT_REDACTION_BLOCK * self.scale()))
             item = Redaction(item_id, Rect(p[0], p[1], 0.0, 0.0), block)

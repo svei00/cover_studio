@@ -263,3 +263,39 @@ def test_cursor_segun_herramienta_asa_y_anotacion(ctl):
     assert ctl.cursor_at((300.0, 200.0), TOL) == Qt.SizeFDiagCursor
     ctl.set_tool(Tool.MARKER)
     assert ctl.cursor_at((700.0, 500.0), TOL) == Qt.CrossCursor
+
+
+# --- marcador sin flecha ------------------------------------------------------
+
+def test_el_marcador_normal_lleva_flecha_automatica(ctl):
+    from core.annotate.model import ArrowSide
+
+    ctl.set_tool(Tool.MARKER)
+    drag(ctl, (100.0, 100.0), (200.0, 160.0))
+    assert ctl.doc.items[0].arrow is ArrowSide.AUTO
+
+
+def test_el_marcador_sin_flecha_se_crea_con_arrow_none(ctl):
+    from core.annotate.model import ArrowSide
+
+    ctl.set_tool(Tool.MARKER_PLAIN)
+    drag(ctl, (100.0, 100.0), (200.0, 160.0))
+    item = ctl.doc.items[0]
+    assert isinstance(item, Marker) and item.arrow is ArrowSide.NONE and item.rect == Rect(100, 100, 100, 60)
+    assert ctl.selected_id == item.id and ctl.tool is Tool.SELECT
+    ctl.undo()
+    assert ctl.doc.items == []
+
+
+def test_el_marcador_sin_flecha_no_dibuja_ninguna_flecha(ctl):
+    from core.annotate.primitives import PLine, build_primitives
+
+    ctl.set_tool(Tool.MARKER_PLAIN)
+    drag(ctl, (100.0, 100.0), (200.0, 160.0))
+    assert not any(isinstance(p, PLine) for p in build_primitives(ctl.doc))
+
+
+def test_un_clic_sin_arrastrar_con_el_marcador_sin_flecha_no_crea_nada(ctl):
+    ctl.set_tool(Tool.MARKER_PLAIN)
+    drag(ctl, (100.0, 100.0), (101.0, 101.0))
+    assert ctl.doc.items == [] and not ctl.stack.canUndo()

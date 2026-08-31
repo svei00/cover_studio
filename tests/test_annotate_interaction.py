@@ -217,3 +217,17 @@ def test_el_lienzo_pinta_asas_de_la_seleccion(tab):
     corner = tab.canvas.image_to_view((100.0, 100.0))
     # un pixel del asa NO es el color de la captura: es blanco
     assert img.pixelColor(int(corner.x()), int(corner.y())).red() > 240
+
+
+def test_hay_un_boton_para_el_marcador_sin_flecha_y_el_panel_lo_refleja(tab):
+    assert tab.tool_buttons[Tool.MARKER].text() == "Marcador"
+    assert tab.tool_buttons[Tool.MARKER_PLAIN].text() == "Recuadro"
+    assert "sin flecha" in tab.tool_buttons[Tool.MARKER_PLAIN].toolTip().lower()
+    tab.tool_buttons[Tool.MARKER_PLAIN].click()
+    drag(tab.canvas, (100.0, 100.0), (300.0, 180.0))
+    assert tab.doc.items[0].arrow is ArrowSide.NONE
+    assert tab.panel._marker_arrow.currentText() == "Sin flecha"
+    # y desde el panel se le puede agregar la flecha despues
+    combo = tab.panel._marker_arrow
+    combo.setCurrentIndex(combo.findData(ArrowSide.RIGHT.value))
+    assert tab.doc.items[0].arrow is ArrowSide.RIGHT

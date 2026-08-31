@@ -55,6 +55,7 @@ def pil_to_qimage(img: Image.Image) -> QImage:
 TOOL_BUTTONS = (
     (Tool.SELECT, "Seleccionar", "Selecciona, mueve y redimensiona anotaciones"),
     (Tool.MARKER, "Marcador", "Recuadro con resplandor dorado y flecha: arrastra sobre la captura"),
+    (Tool.MARKER_PLAIN, "Recuadro", "Marcador sin flecha: el mismo recuadro con resplandor, sin la flecha"),
     (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
