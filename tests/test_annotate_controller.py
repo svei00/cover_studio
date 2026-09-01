@@ -299,3 +299,34 @@ def test_un_clic_sin_arrastrar_con_el_marcador_sin_flecha_no_crea_nada(ctl):
     ctl.set_tool(Tool.MARKER_PLAIN)
     drag(ctl, (100.0, 100.0), (101.0, 101.0))
     assert ctl.doc.items == [] and not ctl.stack.canUndo()
+
+
+# --- fusion de ediciones: solo el mismo campo ---------------------------------------
+
+def test_editar_campos_distintos_son_pasos_distintos(ctl):
+    ctl.doc.items.append(TextLabel("a1", (10.0, 10.0), "Texto", size=28.0))
+    ctl.select("a1")
+    ctl.edit_selected(text="Hola")
+    ctl.edit_selected(size=40.0)
+    ctl.edit_selected(bold=False)
+    assert ctl.stack.count() == 3
+    ctl.undo()
+    assert ctl.doc.items[0].bold is True and ctl.doc.items[0].size == 40.0 and ctl.doc.items[0].text == "Hola"
+
+
+def test_editar_el_mismo_campo_seguido_sigue_fusionandose(ctl):
+    ctl.doc.items.append(TextLabel("a1", (10.0, 10.0), "Texto"))
+    ctl.select("a1")
+    for tamano in (30.0, 32.0, 34.0, 36.0):
+        ctl.edit_selected(size=tamano)
+    assert ctl.stack.count() == 1 and ctl.doc.items[0].size == 36.0
+    ctl.undo()
+    assert ctl.doc.items[0].size == 28.0
+
+
+def test_edit_selected_con_merge_false_nunca_fusiona(ctl):
+    ctl.doc.items.append(TextLabel("a1", (10.0, 10.0), "Texto"))
+    ctl.select("a1")
+    ctl.edit_selected(_merge=False, size=30.0)
+    ctl.edit_selected(_merge=False, size=32.0)
+    assert ctl.stack.count() == 2

@@ -316,7 +316,7 @@ class AnnotateTab(QWidget):
             try:
                 saved = load_doc(sidecar)
                 if tuple(saved.image_size) == image.size:
-                    doc = AnnotationDoc(path, image.size, saved.items, saved.style_scale, saved.padding)
+                    doc = AnnotationDoc(path, image.size, saved.items, saved.style_scale, saved.padding, saved.palette)
                     note = f" ({len(doc.items)} anotaciones recuperadas)"
                 else:
                     note = " (el proyecto guardado era de otra imagen; se ignoro)"

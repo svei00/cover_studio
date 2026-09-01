@@ -28,6 +28,7 @@ from core.annotate.model import (
     StepBadge,
     text_label_from_preset,
 )
+from core.annotate.palette import Palette
 from core.annotate.primitives import doc_scale, item_bounds
 
 Point = tuple[float, float]
@@ -92,13 +93,20 @@ class _RemoveCommand(QUndoCommand):
 
 class _ReplaceCommand(QUndoCommand):
     def __init__(
-        self, controller: EditController, old: Annotation, new: Annotation, text: str, merge_id: int = -1
+        self,
+        controller: EditController,
+        old: Annotation,
+        new: Annotation,
+        text: str,
+        merge_id: int = -1,
+        fields: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__(text)
         self._controller = controller
         self._old = old
         self._new = new
         self._merge_id = merge_id
+        self._fields = fields  # campos editados: solo se fusionan cambios del MISMO campo
 
     def id(self) -> int:  # noqa: A003 (override de Qt)
         return self._merge_id
@@ -112,6 +120,8 @@ class _ReplaceCommand(QUndoCommand):
     def mergeWith(self, other: QUndoCommand) -> bool:  # noqa: N802 (override de Qt)
         if not isinstance(other, _ReplaceCommand) or other._new.id != self._new.id:
             return False
+        if other._fields != self._fields:
+            return False  # decisiones distintas (forma, luego zoom...) son pasos distintos
         self._new = other._new
         return True
 
@@ -253,6 +263,13 @@ class EditController(QObject):
             self.stack.push(
                 _DocPropertyCommand(self, "padding", self.doc.padding, padding, "Margen", PADDING_MERGE_ID)
             )
+
+    def set_palette(self, palette: Palette) -> None:
+        """Paleta de colores del documento. Cada cambio es su propio paso de deshacer: los
+        colores se eligen en un dialogo modal (una decision, un paso), no se escriben."""
+        if self.doc is None or palette == self.doc.palette:
+            return
+        self.stack.push(_DocPropertyCommand(self, "palette", self.doc.palette, palette, "Colores", -1))
 
     def set_style_scale(self, scale: float | None) -> None:
         """Escala de los trazos; None = automatica (segun el ancho de la imagen)."""
@@ -428,10 +445,11 @@ class EditController(QObject):
         if moved != selected:
             self.stack.push(_ReplaceCommand(self, selected, moved, "Mover", NUDGE_MERGE_ID))
 
-    def edit_selected(self, **changes) -> None:
+    def edit_selected(self, *, _merge: bool = True, **changes) -> None:
         """Cambia propiedades (campos de la anotacion) de la seleccionada. Los
         cambios seguidos sobre la misma anotacion se fusionan en un solo paso de
-        deshacer. Todos los kwargs son campos del dataclass, incluido `text`."""
+        deshacer (util al escribir texto); con `_merge=False` cada cambio es su propio
+        paso (colores). Los demas kwargs son campos del dataclass, incluido `text`."""
         selected = self.selected_item()
         if selected is None:
             return
@@ -441,7 +459,8 @@ class EditController(QObject):
             if lens.is_crowded(updated):
                 updated = replace(updated, lens_center=self._auto_lens_center(updated))
         if updated != selected:
-            self.stack.push(_ReplaceCommand(self, selected, updated, "Editar", PROPERTY_MERGE_ID))
+            merge_id = PROPERTY_MERGE_ID if _merge else -1
+            self.stack.push(_ReplaceCommand(self, selected, updated, "Editar", merge_id, frozenset(changes)))
 
     def undo(self) -> None:
         self.stack.undo()

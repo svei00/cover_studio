@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 from core.annotate.errors import AnnotateError
+from core.annotate.palette import is_valid_hex, palette_from_dict, palette_to_dict
+from core.annotate.style import DEFAULT_LENS_CORNER
 from core.annotate.model import (
     Annotation,
     AnnotationDoc,
@@ -33,15 +35,30 @@ def _rect_to_list(r: Rect) -> list[float]:
     return [r.x, r.y, r.w, r.h]
 
 
+def _corner_or_default(value: object) -> float:
+    """Esquinas del lente: un numero entre 0 y 0.5; cualquier otra cosa usa el valor por defecto."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and 0.0 <= value <= 0.5:
+        return float(value)
+    return DEFAULT_LENS_CORNER
+
+
+def _color_or_none(value: object) -> str | None:
+    """Color propio de una anotacion; un dato invalido cuenta como "usa la paleta"."""
+    return value if is_valid_hex(value) else None
+
+
 def item_to_dict(item: Annotation) -> dict:
     if isinstance(item, Marker):
         return {"type": "marker", "id": item.id, "rect": _rect_to_list(item.rect),
-                "arrow": item.arrow.value, "glow": item.glow}
+                "arrow": item.arrow.value, "glow": item.glow, "stroke_color": item.stroke_color,
+                "glow_color": item.glow_color, "arrow_color": item.arrow_color}
     if isinstance(item, Arrow):
         return {"type": "arrow", "id": item.id, "start": list(item.start),
-                "end": list(item.end), "glow": item.glow}
+                "end": list(item.end), "glow": item.glow, "color": item.color,
+                "glow_color": item.glow_color}
     if isinstance(item, StepBadge):
-        return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number}
+        return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
+                "color": item.color}
     if isinstance(item, TextLabel):
         return {"type": "text", "id": item.id, "pos": list(item.pos), "text": item.text,
                 "size": item.size, "color": item.color, "bold": item.bold, "bg": item.bg,
@@ -53,7 +70,8 @@ def item_to_dict(item: Annotation) -> dict:
     if isinstance(item, Magnifier):
         return {"type": "magnifier", "id": item.id, "source": _rect_to_list(item.source),
                 "lens_center": list(item.lens_center), "zoom": item.zoom,
-                "shape": item.shape.value, "connector": item.connector}
+                "shape": item.shape.value, "connector": item.connector, "frame_color": item.frame_color,
+                "corner": item.corner}
     raise AnnotateError(f"Anotacion desconocida: {type(item).__name__}")
 
 
@@ -61,11 +79,18 @@ def item_from_dict(data: dict) -> Annotation:
     kind = data.get("type")
     try:
         if kind == "marker":
-            return Marker(data["id"], Rect(*data["rect"]), ArrowSide(data["arrow"]), data["glow"])
+            return Marker(
+                data["id"], Rect(*data["rect"]), ArrowSide(data["arrow"]), data["glow"],
+                _color_or_none(data.get("stroke_color")), _color_or_none(data.get("glow_color")),
+                _color_or_none(data.get("arrow_color")),
+            )
         if kind == "arrow":
-            return Arrow(data["id"], tuple(data["start"]), tuple(data["end"]), data["glow"])
+            return Arrow(
+                data["id"], tuple(data["start"]), tuple(data["end"]), data["glow"],
+                _color_or_none(data.get("color")), _color_or_none(data.get("glow_color")),
+            )
         if kind == "step":
-            return StepBadge(data["id"], tuple(data["center"]), data["number"])
+            return StepBadge(data["id"], tuple(data["center"]), data["number"], _color_or_none(data.get("color")))
         if kind == "text":
             return TextLabel(
                 id=data["id"], pos=tuple(data["pos"]), text=data["text"], size=data["size"],
@@ -78,7 +103,8 @@ def item_from_dict(data: dict) -> Annotation:
         if kind == "magnifier":
             return Magnifier(
                 data["id"], Rect(*data["source"]), tuple(data["lens_center"]), data["zoom"],
-                LensShape(data["shape"]), data["connector"],
+                LensShape(data["shape"]), data["connector"], _color_or_none(data.get("frame_color")),
+                _corner_or_default(data.get("corner")),
             )
     except (KeyError, TypeError, ValueError) as exc:
         raise AnnotateError(f"Anotacion invalida en el proyecto ({kind}): {exc}") from exc
@@ -101,6 +127,7 @@ def save_doc(doc: AnnotationDoc, path: Path | None = None) -> Path:
         "image_size": list(doc.image_size),
         "style_scale": doc.style_scale,
         "padding": doc.padding,
+        "palette": palette_to_dict(doc.palette),
         "items": [item_to_dict(i) for i in doc.items],
     }
     try:
@@ -125,6 +152,7 @@ def load_doc(path: Path) -> AnnotationDoc:
             items=[item_from_dict(i) for i in data["items"]],
             style_scale=data.get("style_scale"),
             padding=data.get("padding", 0),
+            palette=palette_from_dict(data.get("palette")),
         )
     except (KeyError, TypeError) as exc:
         raise AnnotateError(f"Proyecto de anotaciones incompleto ({path.name}): {exc}") from exc

@@ -7,7 +7,8 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 
-from core.annotate.style import CARD_FILL, CREAM, TAN, TEXT_PRESETS
+from core.annotate.palette import BRAND_PALETTE, Palette
+from core.annotate.style import CARD_FILL, CREAM, DEFAULT_LENS_CORNER, TAN, TEXT_PRESETS
 
 
 class ArrowSide(str, Enum):
@@ -25,8 +26,9 @@ class TextAlign(str, Enum):
 
 
 class LensShape(str, Enum):
-    CIRCLE = "circle"
-    ROUNDED = "rounded"
+    CIRCLE = "circle"      # circulo (el origen se toma cuadrado)
+    ELLIPSE = "ellipse"    # ovalo con las proporciones del rectangulo arrastrado
+    ROUNDED = "rounded"    # rectangular; las esquinas se ajustan con `corner`
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,10 @@ class Marker:
     rect: Rect
     arrow: ArrowSide = ArrowSide.AUTO
     glow: bool = True
+    # colores propios; None = el de la paleta del documento
+    stroke_color: str | None = None
+    glow_color: str | None = None
+    arrow_color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,8 @@ class Arrow:
     start: tuple[float, float]
     end: tuple[float, float]
     glow: bool = True
+    color: str | None = None
+    glow_color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +93,7 @@ class StepBadge:
     id: str
     center: tuple[float, float]
     number: int
+    color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +139,8 @@ class Magnifier:
     zoom: float = 2.0
     shape: LensShape = LensShape.CIRCLE
     connector: bool = True
+    frame_color: str | None = None
+    corner: float = DEFAULT_LENS_CORNER   # solo ROUNDED: 0 = esquinas rectas, 0.5 = muy redondeadas
 
 
 Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier
@@ -142,6 +153,7 @@ class AnnotationDoc:
     items: list[Annotation] = field(default_factory=list)
     style_scale: float | None = None
     padding: int = 0
+    palette: Palette = BRAND_PALETTE
 
 
 def text_label_from_preset(id: str, pos: tuple[float, float], text: str, preset: str = "nota") -> TextLabel:
