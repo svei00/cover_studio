@@ -275,3 +275,37 @@ def load_doc(path: Path) -> AnnotationDoc: ...
 Exportar las anotaciones como datos para que `infographic_builder.py` dibuje los
 marcadores como vectores en la infografía, en vez de quemados en el PNG. Así
 `check_collisions.py` también los podría verificar.
+
+---
+
+## Cambios posteriores
+
+### Colores (paleta del documento + color propio por anotacion)
+
+- `core/annotate/palette.py` (sin Qt): `Palette(marker, arrow, glow, lens, step)` con los
+  colores de marca por defecto; `palette_to_dict` / `palette_from_dict` (un dato invalido o
+  ausente cae al de marca SOLO en ese campo, asi un proyecto viejo se abre igual).
+- Cada anotacion tiene campos de color opcionales (`Marker.stroke_color/glow_color/arrow_color`,
+  `Arrow.color/glow_color`, `StepBadge.color`, `Magnifier.frame_color`); `None` = usa la paleta.
+  Las primitivas reciben la paleta (`palette=BRAND_PALETTE` por defecto, asi nada existente cambio).
+- El contorno navy que da contraste a los trazos de la lupa NO es configurable a proposito.
+- Pendiente a futuro: guardar la paleta como preset (el modulo ya esta aparte, sin Qt, para eso),
+  y selectores de color para las etiquetas de texto (hoy solo por presets).
+
+### Granularidad del deshacer
+
+Una decision es un paso. Los colores se eligen en un dialogo modal: cada uno es su propio paso
+(`edit_selected(_merge=False, ...)`, `set_palette` sin fusion). Las ediciones de propiedades solo se
+fusionan si son del MISMO campo (`_ReplaceCommand` guarda los campos editados): escribir texto o girar
+un spinbox es un paso; cambiar forma y luego zoom son dos. `_merge` lleva guion bajo para no chocar
+con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
+
+### Lupa: forma ovalada y esquinas ajustables
+
+- `LensShape.ELLIPSE`: el origen y el lente son ovalos con las proporciones del rectangulo arrastrado
+  (el circulo, en cambio, cuadra el origen). Pasar de circular a ovalada conserva lo arrastrado.
+- `Magnifier.corner` (0 a 0.5, por defecto 0.12 = el de siempre): esquinas del lente rectangular.
+- Primitiva nueva `PEllipse` (pintor, SVG, bounds). Conector ovalado: recta entre los bordes sobre
+  la linea de los centros. La seleccion de un ovalo ignora la esquina vacia de su caja.
+- Un ovalo recorta el texto en sus puntas: para texto conviene la forma rectangular.
+

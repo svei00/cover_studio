@@ -1,5 +1,9 @@
 """Geometria pura de la lupa: origen efectivo, lente, conector y colocacion
-automatica. Sin Qt ni Pillow."""
+automatica. Sin Qt ni Pillow.
+
+Formas: CIRCLE (origen cuadrado, lente circular), ELLIPSE (el origen y el lente son
+ovalos con las proporciones del rectangulo arrastrado) y ROUNDED (rectangular, con
+esquinas ajustables de rectas a muy redondeadas)."""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ import math
 from collections.abc import Sequence
 
 from core.annotate.model import LensShape, Magnifier, Rect
+from core.annotate.style import DEFAULT_LENS_CORNER
 
 Point = tuple[float, float]
 
@@ -14,11 +19,13 @@ LENS_GAP = 28.0
 MIN_ZOOM = 1.0
 MAX_ZOOM = 8.0
 RECOMMENDED_MAX_ZOOM = 3.0
-ROUNDED_RADIUS_RATIO = 0.12
+MAX_CORNER = 0.5                         # 0.5 = esquinas tan redondeadas que el lente parece un capsula/ovalo
+ROUNDED_RADIUS_RATIO = DEFAULT_LENS_CORNER
 
 
 def effective_source(m: Magnifier) -> Rect:
-    """Region realmente ampliada. Circular: cuadrado centrado de lado max(w, h)."""
+    """Region realmente ampliada. Circular: cuadrado centrado de lado max(w, h). Ovalada y
+    rectangular: el rectangulo tal cual (asi se conservan las proporciones arrastradas)."""
     s = m.source
     if m.shape is LensShape.CIRCLE:
         side = max(s.w, s.h)
@@ -39,9 +46,9 @@ def lens_rect(m: Magnifier) -> Rect:
 
 
 def lens_corner_radius(m: Magnifier) -> float:
-    """Radio de las esquinas del lente rectangular, proporcional a su tamano."""
+    """Radio de las esquinas del lente rectangular: `corner` (0 a 0.5) por el lado menor."""
     w, h = lens_size(m)
-    return min(w, h) * ROUNDED_RADIUS_RATIO
+    return min(w, h) * min(max(m.corner, 0.0), MAX_CORNER)
 
 
 def crop_box(m: Magnifier) -> tuple[int, int, int, int]:
@@ -55,11 +62,17 @@ def is_crowded(m: Magnifier, margin: float = LENS_GAP / 2) -> bool:
     return lens_rect(m).inflate(margin).intersects(effective_source(m))
 
 
+def _normalized_radius(rect: Rect, p: Point) -> float:
+    """Distancia al centro en unidades del elipse inscrito: <1 dentro, 1 en el borde."""
+    cx, cy = rect.center
+    a, b = max(rect.w / 2, 1e-9), max(rect.h / 2, 1e-9)
+    return math.hypot((p[0] - cx) / a, (p[1] - cy) / b)
+
+
 def contains_in_lens(m: Magnifier, p: Point) -> bool:
     lens = lens_rect(m)
-    if m.shape is LensShape.CIRCLE:
-        cx, cy = lens.center
-        return math.hypot(p[0] - cx, p[1] - cy) <= lens.w / 2
+    if m.shape in (LensShape.CIRCLE, LensShape.ELLIPSE):
+        return _normalized_radius(lens, p) <= 1.0
     return lens.x <= p[0] <= lens.right and lens.y <= p[1] <= lens.bottom
 
 
@@ -68,6 +81,9 @@ def near_source_border(m: Magnifier, p: Point, tol: float) -> bool:
     if m.shape is LensShape.CIRCLE:
         cx, cy = src.center
         return abs(math.hypot(p[0] - cx, p[1] - cy) - src.w / 2) <= tol
+    if m.shape is LensShape.ELLIPSE:
+        # distancia aproximada al borde: diferencia de radio normalizado por el semieje menor
+        return abs(_normalized_radius(src, p) - 1.0) * min(src.w, src.h) / 2 <= tol
     outer, inner = src.inflate(tol), src.inflate(-tol)
 
     def inside(r: Rect) -> bool:
@@ -109,16 +125,22 @@ def _exit_distance(rect: Rect, ux: float, uy: float) -> float:
     return min(candidates)
 
 
-def _rect_segment(src: Rect, lens: Rect) -> list[tuple[Point, Point]]:
-    """Recta entre los bordes de los dos rectangulos, sobre la linea de sus centros."""
+def _ellipse_exit_distance(rect: Rect, ux: float, uy: float) -> float:
+    """Distancia desde el centro del elipse inscrito hasta su borde en la direccion (ux, uy)."""
+    a, b = max(rect.w / 2, 1e-9), max(rect.h / 2, 1e-9)
+    return 1.0 / math.hypot(ux / a, uy / b)
+
+
+def _line_segment(src: Rect, lens: Rect, exit_distance) -> list[tuple[Point, Point]]:
+    """Recta entre los bordes de las dos formas, sobre la linea de sus centros."""
     (x1, y1), (x2, y2) = src.center, lens.center
     dx, dy = x2 - x1, y2 - y1
     d = math.hypot(dx, dy)
     if d == 0:
         return []
     ux, uy = dx / d, dy / d
-    t1 = _exit_distance(src, ux, uy)
-    t2 = _exit_distance(lens, ux, uy)
+    t1 = exit_distance(src, ux, uy)
+    t2 = exit_distance(lens, ux, uy)
     if t1 + t2 >= d:
         return []
     return [((x1 + ux * t1, y1 + uy * t1), (x2 - ux * t2, y2 - uy * t2))]
@@ -130,7 +152,9 @@ def connector_segments(m: Magnifier) -> list[tuple[Point, Point]]:
     src, lens = effective_source(m), lens_rect(m)
     if m.shape is LensShape.CIRCLE:
         return _tangent_segments(src.center, src.w / 2, lens.center, lens.w / 2)
-    return _rect_segment(src, lens)
+    if m.shape is LensShape.ELLIPSE:
+        return _line_segment(src, lens, _ellipse_exit_distance)
+    return _line_segment(src, lens, _exit_distance)
 
 
 # --------------------------------------------------------------------------

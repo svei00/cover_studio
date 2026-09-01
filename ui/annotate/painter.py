@@ -11,7 +11,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPolygonF
 
 from core.annotate import style
-from core.annotate.primitives import PCircle, PImage, PLine, PPolygon, PRect, PText, Primitive
+from core.annotate.primitives import PCircle, PEllipse, PImage, PLine, PPolygon, PRect, PText, Primitive
 
 _FAMILIES = [name.strip() for name in style.FONT.split(",")]
 
@@ -65,7 +65,7 @@ def _paint_image(painter: QPainter, p: PImage, images: Mapping[str, QImage]) -> 
         return
     path = QPainterPath()
     rect = QRectF(p.dest.x, p.dest.y, p.dest.w, p.dest.h)
-    if p.shape == "circle":
+    if p.shape in ("circle", "ellipse"):
         path.addEllipse(rect)
     else:
         path.addRoundedRect(rect, p.rx, p.rx)
@@ -104,5 +104,9 @@ def paint_primitives(
             painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
             painter.setBrush(_brush(p.fill))
             painter.drawEllipse(QPointF(*p.center), p.r, p.r)
+        elif isinstance(p, PEllipse):
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
+            painter.setBrush(_brush(p.fill))
+            painter.drawEllipse(QPointF(*p.center), p.rx, p.ry)
         elif isinstance(p, PText):
             _paint_text(painter, p)

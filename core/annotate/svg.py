@@ -15,6 +15,7 @@ from core.annotate.errors import AnnotateError
 from core.annotate.model import AnnotationDoc
 from core.annotate.primitives import (
     PCircle,
+    PEllipse,
     PImage,
     PLine,
     PPolygon,
@@ -43,6 +44,11 @@ def _image_to_svg(p: PImage, crops: Mapping[str, Image.Image] | None) -> str:
     d = p.dest
     if p.shape == "circle":
         shape = f'<circle cx="{_f(d.center[0])}" cy="{_f(d.center[1])}" r="{_f(d.w / 2)}"/>'
+    elif p.shape == "ellipse":
+        shape = (
+            f'<ellipse cx="{_f(d.center[0])}" cy="{_f(d.center[1])}" '
+            f'rx="{_f(d.w / 2)}" ry="{_f(d.h / 2)}"/>'
+        )
     else:
         shape = (
             f'<rect x="{_f(d.x)}" y="{_f(d.y)}" width="{_f(d.w)}" height="{_f(d.h)}" '
@@ -86,6 +92,17 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
             else ""
         )
         return f'<polygon points="{pts}" {fill} {stroke}/>'
+    if isinstance(p, PEllipse):
+        fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
+        stroke = (
+            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash)}'
+            if p.stroke
+            else ""
+        )
+        return (
+            f'<ellipse cx="{_f(p.center[0])}" cy="{_f(p.center[1])}" rx="{_f(p.rx)}" '
+            f'ry="{_f(p.ry)}" {fill} {stroke}/>'
+        )
     if isinstance(p, PCircle):
         fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
         stroke = (

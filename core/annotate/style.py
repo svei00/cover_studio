@@ -28,6 +28,7 @@ GLOW_RINGS: tuple[tuple[float, float], ...] = tuple(
 GLOW_RING_WIDTH = 4.5
 
 MARKER_STROKE = 5.0
+DEFAULT_LENS_CORNER = 0.12   # esquinas del lente rectangular, como fraccion del lado menor
 MARKER_RX = 6.0
 ARROW_LENGTH = 72.0
 ARROW_GAP = 6.0

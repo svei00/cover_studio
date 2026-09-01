@@ -182,7 +182,9 @@ def test_editar_zoom_y_forma_desde_propiedades(ctl):
     ctl.edit_selected(shape=LensShape.ROUNDED)
     item = ctl.doc.items[0]
     assert item.zoom == 3.5 and item.shape is LensShape.ROUNDED
-    ctl.undo()  # los cambios seguidos de propiedades son un solo paso
+    ctl.undo()  # forma y zoom son decisiones distintas: dos pasos, no uno
+    assert ctl.doc.items[0].shape is LensShape.CIRCLE and ctl.doc.items[0].zoom == 3.5
+    ctl.undo()
     assert ctl.doc.items[0] == M
 
 

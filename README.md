@@ -43,7 +43,8 @@ Anota capturas de pantalla con la identidad visual de Excel Solutions.
 2. Elige una herramienta y dibuja sobre la captura: **Marcador** (recuadro con
    resplandor dorado y flecha), **Flecha**, **Paso** (círculo numerado), **Texto**
    (etiqueta con presets de marca), **Pixelar** (para anonimizar RFC, nombres, UUID)
-   y **Lupa** (amplía una zona en un lente aparte).
+   y **Lupa** (amplía una zona en un lente aparte: circular, ovalada, o rectangular con
+   esquinas ajustables). Hay **Marcador** (con flecha) y **Recuadro** (sin flecha).
 3. **Seleccionar** mueve y redimensiona; `Suprimir` borra; `CTRL + Z` / `CTRL + Y`
    deshacen y rehacen. El panel de la derecha edita las propiedades de lo seleccionado
    y, sin selección, el margen extra y la escala de trazo del documento.
@@ -52,6 +53,11 @@ Anota capturas de pantalla con la identidad visual de Excel Solutions.
    `<nombre>.original.png`.
 5. **Guardar proyecto** (`CTRL + S`) deja un `.anotar.json` junto a la captura; al
    volver a abrirla se recuperan las anotaciones.
+
+**Colores:** por defecto son los de marca. Sin selección, el panel tiene la paleta del
+documento (recuadro, flecha, resplandor, marco de la lupa, paso numerado) y
+"Restaurar colores de marca"; cada anotación puede además tener un color propio y volver
+a la paleta con el botón "Paleta". La paleta se guarda en el proyecto.
 
 El pixelado se aplica antes que todo lo demás: un dato tapado no reaparece dentro de una
 lupa ni en el SVG exportado. El diseño completo está en `docs/arquitectura-anotar.md`.

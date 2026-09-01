@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from core.annotate.model import AnnotationDoc, Rect, TextLabel
 from core.annotate.primitives import (
     PCircle,
+    PEllipse,
     PImage,
     PLine,
     PPolygon,
@@ -34,6 +35,9 @@ def primitive_bounds(p: Primitive) -> Rect | None:
     if isinstance(p, PCircle):
         r = p.r + (p.width / 2 if p.stroke else 0.0)
         return Rect(p.center[0] - r, p.center[1] - r, 2 * r, 2 * r)
+    if isinstance(p, PEllipse):
+        box = Rect(p.center[0] - p.rx, p.center[1] - p.ry, 2 * p.rx, 2 * p.ry)
+        return box.inflate(p.width / 2) if p.stroke else box
     if isinstance(p, PImage):
         return p.dest
     return None
