@@ -168,20 +168,22 @@ def default_lens_center(
     image_size: tuple[int, int],
     obstacles: Sequence[Rect] = (),
     gap: float = LENS_GAP,
+    region: Rect | None = None,
 ) -> Point:
     """Centro del lente en el lado del origen con mas espacio libre, sin cubrir
-    el origen ni salirse de la imagen ni pisar los obstaculos. Si ningun lado
-    cumple, el de mas espacio, recortado para que quepa lo mejor posible."""
+    el origen ni salirse de la imagen (o de `region`, la parte visible si hay
+    recorte) ni pisar los obstaculos. Si ningun lado cumple, el de mas espacio,
+    recortado para que quepa lo mejor posible."""
     probe = Magnifier("probe", source, source.center, zoom, shape)
     src = effective_source(probe)
     w, h = lens_size(probe)
-    iw, ih = image_size
+    area = region or Rect(0.0, 0.0, float(image_size[0]), float(image_size[1]))
     cx, cy = src.center
     candidates = [
-        (iw - src.right, (src.right + gap + w / 2, cy)),
-        (src.x, (src.x - gap - w / 2, cy)),
-        (ih - src.bottom, (cx, src.bottom + gap + h / 2)),
-        (src.y, (cx, src.y - gap - h / 2)),
+        (area.right - src.right, (src.right + gap + w / 2, cy)),
+        (src.x - area.x, (src.x - gap - w / 2, cy)),
+        (area.bottom - src.bottom, (cx, src.bottom + gap + h / 2)),
+        (src.y - area.y, (cx, src.y - gap - h / 2)),
     ]
     ordered = sorted(candidates, key=lambda c: -c[0])
 
@@ -190,7 +192,7 @@ def default_lens_center(
 
     def fits(center: Point) -> bool:
         b = box(center)
-        inside = b.x >= 0 and b.y >= 0 and b.right <= iw and b.bottom <= ih
+        inside = b.x >= area.x and b.y >= area.y and b.right <= area.right and b.bottom <= area.bottom
         return inside and not any(b.intersects(o) for o in obstacles)
 
     for _free, center in ordered:
@@ -198,8 +200,8 @@ def default_lens_center(
             return center
 
     def clamped(center: Point) -> Point:
-        x = min(max(center[0], w / 2), iw - w / 2) if w <= iw else iw / 2
-        y = min(max(center[1], h / 2), ih - h / 2) if h <= ih else ih / 2
+        x = min(max(center[0], area.x + w / 2), area.right - w / 2) if w <= area.w else area.x + area.w / 2
+        y = min(max(center[1], area.y + h / 2), area.bottom - h / 2) if h <= area.h else area.y + area.h / 2
         return x, y
 
     def overlap(a: Rect, b: Rect) -> float:

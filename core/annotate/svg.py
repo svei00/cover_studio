@@ -73,9 +73,10 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
             if p.stroke
             else ""
         )
+        blend = f' style="mix-blend-mode:{p.blend}"' if p.blend else ""
         return (
             f'<rect x="{_f(p.rect.x)}" y="{_f(p.rect.y)}" width="{_f(p.rect.w)}" '
-            f'height="{_f(p.rect.h)}" rx="{_f(p.rx)}" {fill} {stroke}/>'
+            f'height="{_f(p.rect.h)}" rx="{_f(p.rx)}" {fill} {stroke}{blend}/>'
         )
     if isinstance(p, PLine):
         return (
@@ -134,8 +135,8 @@ def _png_data_uri(img: Image.Image) -> str:
 
 
 def canvas_size(doc: AnnotationDoc) -> tuple[int, int]:
-    w, h = doc.image_size
-    return w + 2 * doc.padding, h + 2 * doc.padding
+    view = doc.view
+    return int(view.w) + 2 * doc.padding, int(view.h) + 2 * doc.padding
 
 
 def to_svg(
@@ -154,9 +155,15 @@ def to_svg(
     ]
     if pad:
         parts.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="{style.CARD_FILL}"/>')
-    parts.append(f'<g transform="translate({pad} {pad})">')
+    view = doc.view
+    # las anotaciones siguen en coordenadas de la fuente: se traslada por -recorte
+    parts.append(f'<g transform="translate({pad - int(view.x)} {pad - int(view.y)})">')
+    if doc.crop is not None:
+        # solo viaja el bitmap recortado: los pixeles de fuera no quedan en el SVG
+        box = (int(view.x), int(view.y), int(view.right), int(view.bottom))
+        base = base.crop(box)
     parts.append(
-        f'<image x="0" y="0" width="{doc.image_size[0]}" height="{doc.image_size[1]}" '
+        f'<image x="{int(view.x)}" y="{int(view.y)}" width="{int(view.w)}" height="{int(view.h)}" '
         f'xlink:href="{_png_data_uri(base)}"/>'
     )
     parts.extend(primitive_to_svg(p, crops) for p in primitives)

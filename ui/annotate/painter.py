@@ -89,10 +89,13 @@ def paint_primitives(
             painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
             painter.setBrush(_brush(p.fill, p.fill_opacity))
             rect = QRectF(p.rect.x, p.rect.y, p.rect.w, p.rect.h)
+            if p.blend == "multiply":
+                painter.setCompositionMode(QPainter.CompositionMode_Multiply)
             if p.rx > 0:
                 painter.drawRoundedRect(rect, p.rx, p.rx)
             else:
                 painter.drawRect(rect)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         elif isinstance(p, PLine):
             painter.setPen(_pen(p.stroke, p.width, p.opacity))
             painter.drawLine(QPointF(*p.a), QPointF(*p.b))

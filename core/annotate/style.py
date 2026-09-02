@@ -27,8 +27,26 @@ GLOW_RINGS: tuple[tuple[float, float], ...] = tuple(
 )
 GLOW_RING_WIDTH = 4.5
 
+# Resaltador: colores estandar de papeleria (medidos sobre fondo claro con Marcador y sobre
+# fondo oscuro con Translucido, 2026-10).
+HIGHLIGHT_YELLOW = "#FFF200"
+HIGHLIGHT_SWATCHES: tuple[tuple[str, str], ...] = (
+    ("Amarillo", HIGHLIGHT_YELLOW),
+    ("Verde", "#7CFC00"),
+    ("Rosa", "#FF69B4"),
+    ("Naranja", "#FFA500"),
+    ("Azul claro", "#00BFFF"),
+)
+HIGHLIGHT_RADIUS = 3.0          # esquinas del resaltador a escala 1
+MAX_HIGHLIGHT_RADIUS = 30.0
+HIGHLIGHT_MARKER_OPACITY = 1.0   # modo Marcador (multiplicar): el color puro, el texto sigue negro
+HIGHLIGHT_OVERLAY_OPACITY = 0.5  # modo Translucido: se ve sobre fondos oscuros, el texto pierde algo de contraste
+
 MARKER_STROKE = 5.0
 DEFAULT_LENS_CORNER = 0.12   # esquinas del lente rectangular, como fraccion del lado menor
+DEFAULT_LENS_FRAME_WIDTH = 4.0   # grosor del marco del lente (a escala 1); el origen y el conector llevan la mitad
+MIN_LENS_FRAME_WIDTH = 1.0
+MAX_LENS_FRAME_WIDTH = 20.0
 MARKER_RX = 6.0
 ARROW_LENGTH = 72.0
 ARROW_GAP = 6.0

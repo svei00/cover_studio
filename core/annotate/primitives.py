@@ -16,6 +16,8 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    Highlight,
+    HighlightMode,
     LensShape,
     Magnifier,
     Marker,
@@ -39,6 +41,7 @@ class PRect:
     fill: str | None = None
     fill_opacity: float = 1.0
     dash: tuple[float, float] | None = None
+    blend: str | None = None   # 'multiply': se mezcla con lo de abajo (resaltador en modo Marcador)
 
 
 @dataclass(frozen=True)
@@ -253,6 +256,14 @@ def step_primitives(s: StepBadge, scale: float, palette: Palette = BRAND_PALETTE
     ]
 
 
+def highlight_primitives(h: Highlight, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
+    blend = "multiply" if h.mode is HighlightMode.MARKER else None
+    return [
+        PRect(h.rect, None, 0.0, rx=h.radius * scale, fill=h.color or palette.highlight,
+              fill_opacity=h.opacity, blend=blend)
+    ]
+
+
 def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
     """Contorno punteado del origen, conector, imagen del lente y su marco. Cada trazo de
     color lleva debajo uno navy mas ancho para que se lea sobre capturas claras."""
@@ -260,33 +271,49 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
     box = lens.lens_rect(m)
     frame = m.frame_color or palette.lens
     dash = (6 * scale, 4 * scale)
+    fw = m.frame_width                 # marco del lente (4 por defecto)
+    thin = fw / 2                      # origen punteado y conector (2 por defecto)
     out: list[Primitive] = []
+    rx = lens.lens_corner_radius(m) if m.shape is LensShape.ROUNDED else 0.0
+
+    if m.glow:
+        # debajo de todo: el conector y el origen se dibujan encima, y la imagen del lente
+        # tapa la parte de los anillos que cae dentro
+        glow_color = m.glow_color or palette.glow
+        for off, op in style.GLOW_RINGS:
+            o = (off + (fw - style.MARKER_STROKE) / 2) * scale
+            width = style.GLOW_RING_WIDTH * scale
+            if m.shape is LensShape.CIRCLE:
+                out.append(PCircle(box.center, box.w / 2 + o, None, glow_color, width, opacity=op))
+            elif m.shape is LensShape.ELLIPSE:
+                out.append(PEllipse(box.center, box.w / 2 + o, box.h / 2 + o, None, glow_color, width, opacity=op))
+            else:
+                out.append(PRect(box.inflate(o), glow_color, width, op, rx + o))
 
     if m.shape is LensShape.CIRCLE:
-        out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, 4 * scale, opacity=0.6))
-        out.append(PCircle(src.center, src.w / 2, None, frame, 2 * scale, dash=dash))
+        out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, (thin + 2) * scale, opacity=0.6))
+        out.append(PCircle(src.center, src.w / 2, None, frame, thin * scale, dash=dash))
     elif m.shape is LensShape.ELLIPSE:
-        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, style.CARD_FILL, 4 * scale, opacity=0.6))
-        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, frame, 2 * scale, dash=dash))
+        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, style.CARD_FILL, (thin + 2) * scale, opacity=0.6))
+        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, frame, thin * scale, dash=dash))
     else:
-        out.append(PRect(src, style.CARD_FILL, 4 * scale, 0.6, 3 * scale))
-        out.append(PRect(src, frame, 2 * scale, 1.0, 3 * scale, dash=dash))
+        out.append(PRect(src, style.CARD_FILL, (thin + 2) * scale, 0.6, 3 * scale))
+        out.append(PRect(src, frame, thin * scale, 1.0, 3 * scale, dash=dash))
 
     for a, b in lens.connector_segments(m):
-        out.append(PLine(a, b, style.CARD_FILL, 4 * scale, 0.6))
-        out.append(PLine(a, b, frame, 2 * scale))
+        out.append(PLine(a, b, style.CARD_FILL, (thin + 2) * scale, 0.6))
+        out.append(PLine(a, b, frame, thin * scale))
 
-    rx = lens.lens_corner_radius(m) if m.shape is LensShape.ROUNDED else 0.0
     out.append(PImage(m.id, box, m.shape.value, rx))
     if m.shape is LensShape.CIRCLE:
-        out.append(PCircle(box.center, box.w / 2, None, style.CARD_FILL, 8 * scale))
-        out.append(PCircle(box.center, box.w / 2, None, frame, 4 * scale))
+        out.append(PCircle(box.center, box.w / 2, None, style.CARD_FILL, (fw + 4) * scale))
+        out.append(PCircle(box.center, box.w / 2, None, frame, fw * scale))
     elif m.shape is LensShape.ELLIPSE:
-        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, style.CARD_FILL, 8 * scale))
-        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, frame, 4 * scale))
+        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, style.CARD_FILL, (fw + 4) * scale))
+        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, frame, fw * scale))
     else:
-        out.append(PRect(box, style.CARD_FILL, 8 * scale, 1.0, rx))
-        out.append(PRect(box, frame, 4 * scale, 1.0, rx))
+        out.append(PRect(box, style.CARD_FILL, (fw + 4) * scale, 1.0, rx))
+        out.append(PRect(box, frame, fw * scale, 1.0, rx))
     return out
 
 
@@ -317,19 +344,21 @@ def resolve_arrow_side(
     image_size: tuple[int, int],
     others: Sequence[Annotation],
     scale: float,
+    region: Rect | None = None,
 ) -> ArrowSide:
-    """AUTO elige el lado con mas espacio libre dentro de la imagen y cuya
-    flecha no pase sobre otras anotaciones; si ninguno cumple, el de mas espacio."""
+    """AUTO elige el lado con mas espacio libre dentro de la imagen (o de `region`, la
+    parte visible si hay recorte) y cuya flecha no pase sobre otras anotaciones; si
+    ninguno cumple, el de mas espacio."""
     if marker.arrow is not ArrowSide.AUTO:
         return marker.arrow
-    width, height = image_size
+    area = region or Rect(0.0, 0.0, float(image_size[0]), float(image_size[1]))
     r = marker.rect
     needed = (style.ARROW_GAP + style.ARROW_LENGTH + style.ARROW_HEAD) * scale
     free = {
-        ArrowSide.LEFT: r.x,
-        ArrowSide.RIGHT: width - r.right,
-        ArrowSide.TOP: r.y,
-        ArrowSide.BOTTOM: height - r.bottom,
+        ArrowSide.LEFT: r.x - area.x,
+        ArrowSide.RIGHT: area.right - r.right,
+        ArrowSide.TOP: r.y - area.y,
+        ArrowSide.BOTTOM: area.bottom - r.bottom,
     }
     order = sorted(free, key=lambda s: -free[s])
     obstacles = [b for o in others if o is not marker and (b := item_bounds(o, scale)) is not None]
@@ -342,7 +371,27 @@ def resolve_arrow_side(
 
 
 def doc_scale(doc: AnnotationDoc) -> float:
-    return doc.style_scale if doc.style_scale else style.auto_scale(doc.image_size[0])
+    """Escala de los trazos: la manual, o la automatica segun el ancho de lo que se
+    exporta (el recorte, si lo hay)."""
+    return doc.style_scale if doc.style_scale else style.auto_scale(doc.view.w)
+
+
+def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[Primitive]:
+    """Primitivas de una sola anotacion (las Redaction no generan: viven en el bitmap)."""
+    if isinstance(item, Marker):
+        side = resolve_arrow_side(item, doc.image_size, doc.items, scale, doc.view)
+        return marker_primitives(item, scale, side, doc.palette)
+    if isinstance(item, Arrow):
+        return arrow_primitives(item, scale, doc.palette)
+    if isinstance(item, StepBadge):
+        return step_primitives(item, scale, doc.palette)
+    if isinstance(item, TextLabel):
+        return text_label_primitives(item, scale)
+    if isinstance(item, Magnifier):
+        return magnifier_primitives(item, scale, doc.palette)
+    if isinstance(item, Highlight):
+        return highlight_primitives(item, scale, doc.palette)
+    return []
 
 
 def build_primitives(doc: AnnotationDoc) -> list[Primitive]:
@@ -351,15 +400,5 @@ def build_primitives(doc: AnnotationDoc) -> list[Primitive]:
     scale = doc_scale(doc)
     out: list[Primitive] = []
     for item in doc.items:
-        if isinstance(item, Marker):
-            side = resolve_arrow_side(item, doc.image_size, doc.items, scale)
-            out.extend(marker_primitives(item, scale, side, doc.palette))
-        elif isinstance(item, Arrow):
-            out.extend(arrow_primitives(item, scale, doc.palette))
-        elif isinstance(item, StepBadge):
-            out.extend(step_primitives(item, scale, doc.palette))
-        elif isinstance(item, TextLabel):
-            out.extend(text_label_primitives(item, scale))
-        elif isinstance(item, Magnifier):
-            out.extend(magnifier_primitives(item, scale, doc.palette))
+        out.extend(item_primitives(doc, item, scale))
     return out

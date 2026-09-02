@@ -15,6 +15,7 @@ from core.annotate import lens, style
 from core.annotate.model import (
     Annotation,
     Arrow,
+    Highlight,
     Magnifier,
     Marker,
     Rect,
@@ -96,6 +97,8 @@ def hit_item(item: Annotation, p: Point, tol: float, scale: float) -> bool:
         return _contains(outer, p) and not _contains(inner, p)
     if isinstance(item, Redaction):
         return _contains(item.rect.inflate(tol), p)
+    if isinstance(item, Highlight):
+        return _contains(item.rect.inflate(tol / 2), p)
     if isinstance(item, Arrow):
         return distance_to_segment(p, item.start, item.end) <= tol
     if isinstance(item, StepBadge):
@@ -125,7 +128,7 @@ def hit_test(items: Sequence[Annotation], p: Point, tol: float, scale: float) ->
     return None
 
 
-def _rect_handles(r: Rect) -> dict[Handle, Point]:
+def rect_handles(r: Rect) -> dict[Handle, Point]:
     cx, cy = r.center
     return {
         Handle.NW: (r.x, r.y), Handle.N: (cx, r.y), Handle.NE: (r.right, r.y),
@@ -137,10 +140,10 @@ def _rect_handles(r: Rect) -> dict[Handle, Point]:
 def item_handles(item: Annotation) -> dict[Handle, Point]:
     """Asas de redimensionado: 8 para rectangulos, 2 para flechas, para la lupa
     las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom."""
-    if isinstance(item, (Marker, Redaction)):
-        return _rect_handles(item.rect)
+    if isinstance(item, (Marker, Redaction, Highlight)):
+        return rect_handles(item.rect)
     if isinstance(item, Magnifier):
-        handles = _rect_handles(lens.effective_source(item))
+        handles = rect_handles(lens.effective_source(item))
         box = lens.lens_rect(item)
         handles[Handle.LENS] = (box.right, box.bottom)
         return handles
@@ -161,7 +164,7 @@ def hit_handle(item: Annotation, p: Point, tol: float) -> Handle | None:
 
 def selection_rect(item: Annotation, scale: float) -> Rect:
     """Caja que se dibuja alrededor de la anotacion seleccionada."""
-    if isinstance(item, (Marker, Redaction)):
+    if isinstance(item, (Marker, Redaction, Highlight)):
         return item.rect
     if isinstance(item, Arrow):
         x0, x1 = sorted((item.start[0], item.end[0]))
@@ -198,7 +201,7 @@ def move_item(item: Annotation, dx: float, dy: float, part: str | None = None) -
         if part == "source":
             return replace(item, source=moved_source)
         return replace(item, source=moved_source, lens_center=moved_center)
-    if isinstance(item, (Marker, Redaction)):
+    if isinstance(item, (Marker, Redaction, Highlight)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
     if isinstance(item, Arrow):
@@ -225,23 +228,23 @@ def resize_item(item: Annotation, handle: Handle, p: Point, min_size: float = 4.
         return item
     if isinstance(item, Magnifier):
         return _resize_lens(item, handle, p, min_size)
-    if not isinstance(item, (Marker, Redaction)):
+    if not isinstance(item, (Marker, Redaction, Highlight)):
         return item
-    return replace(item, rect=_resize_rect(item.rect, handle, p, min_size))
+    return replace(item, rect=resize_rect(item.rect, handle, p, min_size))
 
 
 def _resize_lens(m: Magnifier, handle: Handle, p: Point, min_size: float) -> Magnifier:
     """El asa LENS cambia el zoom anclando la esquina superior izquierda del lente;
     las demas redimensionan la zona de origen."""
     if handle is not Handle.LENS:
-        return replace(m, source=_resize_rect(lens.effective_source(m), handle, p, min_size))
+        return replace(m, source=resize_rect(lens.effective_source(m), handle, p, min_size))
     box, src = lens.lens_rect(m), lens.effective_source(m)
     zoom = max((p[0] - box.x) / src.w, (p[1] - box.y) / src.h)
     zoom = min(max(zoom, lens.MIN_ZOOM), lens.MAX_ZOOM)
     return replace(m, zoom=zoom, lens_center=(box.x + src.w * zoom / 2, box.y + src.h * zoom / 2))
 
 
-def _resize_rect(r: Rect, handle: Handle, p: Point, min_size: float) -> Rect:
+def resize_rect(r: Rect, handle: Handle, p: Point, min_size: float) -> Rect:
     left, top, right, bottom = r.x, r.y, r.right, r.bottom
     if handle in _WEST:
         left = p[0]

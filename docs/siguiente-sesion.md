@@ -6,13 +6,13 @@ sin repetir descubrimientos ni preguntar lo que ya se decidio.
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **431 tests pasan.**
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **539 tests pasan.**
 
 - **Pestana "Portada"**: genera portadas 16:9 (foto + banda + titulo + acento en L), vista previa en
   vivo con hilo y debounce, arrastre de la banda, presets, guarda anti-sobrescritura.
 - **Pestana "Anotar"**: anota capturas con la identidad de Excel Solutions. Herramientas: Seleccionar,
   Marcador (con flecha), Recuadro (sin flecha), Flecha, Paso, Texto, Pixelar, Lupa (circular, ovalada,
-  rectangular con esquinas ajustables). Paleta de colores del documento + color propio por anotacion,
+  rectangular con esquinas ajustables). Resaltador, recorte, restablecer al valor por defecto (doble clic o boton) y lupa con grosor y resplandor. Paleta de colores del documento + color propio por anotacion,
   margen extra, escala de trazo, deshacer/rehacer, guardar proyecto (`.anotar.json`), copiar,
   exportar PNG/SVG, aviso de cambios sin guardar.
 - **Animaciones**: SOLO la fase 0 (`core/easing.py`, `core/text_metrics.py`). Fases 1 a 7 pendientes.
@@ -44,7 +44,7 @@ cambios sin commitear de la sesion anterior, es lo ultimo que se hizo (colores y
 Los cuatro son para la pestana Anotar. Hazlos uno por uno, con tests y verificacion visual, y da el
 commit de cada uno antes de empezar el siguiente.
 
-### 3.1 Recortar la captura
+### 3.1 Recortar la captura — HECHO (ver `arquitectura-anotar.md`, "Recorte no destructivo")
 Para "me pase de largo / necesito algo mas pequeno".
 - Recomendado **no destructivo**: `AnnotationDoc.crop: Rect | None` en pixeles de la imagen fuente. Las
   anotaciones siguen en coordenadas de la fuente; el export y el lienzo muestran solo la region
@@ -55,7 +55,7 @@ Para "me pase de largo / necesito algo mas pequeno".
   lupas (siguen leyendo el bitmap COMPLETO), `view_layout` del lienzo, el sidecar JSON (`crop`
   opcional, proyectos viejos sin esa clave deben abrir igual).
 
-### 3.2 Resaltador (highlighter)
+### 3.2 Resaltador (highlighter) — HECHO (ver `arquitectura-anotar.md`, "Resaltador")
 - Nueva anotacion `Highlight(id, rect, color=None, opacity)` con relleno semitransparente sobre texto
   (como un marcador fluorescente), esquinas redondeadas opcionales.
 - **Colores estandar de papeleria** (los de un resaltador de Office Depot): amarillo, verde, rosa,

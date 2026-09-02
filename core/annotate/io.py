@@ -6,14 +6,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from core.annotate.crop import normalize_crop
 from core.annotate.errors import AnnotateError
 from core.annotate.palette import is_valid_hex, palette_from_dict, palette_to_dict
-from core.annotate.style import DEFAULT_LENS_CORNER
+from core.annotate.style import (
+    DEFAULT_LENS_CORNER,
+    DEFAULT_LENS_FRAME_WIDTH,
+    HIGHLIGHT_MARKER_OPACITY,
+    HIGHLIGHT_RADIUS,
+    MAX_HIGHLIGHT_RADIUS,
+    MAX_LENS_FRAME_WIDTH,
+    MIN_LENS_FRAME_WIDTH,
+)
 from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    Highlight,
+    HighlightMode,
     LensShape,
     Magnifier,
     Marker,
@@ -33,6 +44,38 @@ def sidecar_path(image_path: Path) -> Path:
 
 def _rect_to_list(r: Rect) -> list[float]:
     return [r.x, r.y, r.w, r.h]
+
+
+def _crop_or_none(value: object, image_size: tuple[int, int]) -> Rect | None:
+    """Recorte guardado: una lista [x, y, w, h]; cualquier otra cosa (o un recorte que ya no
+    cabe en la imagen) se ignora y se abre la captura completa."""
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+        return None
+    return normalize_crop(Rect(*(float(v) for v in value)), image_size)
+
+
+def _number_or_default(value: object, low: float, high: float, default: float) -> float:
+    """Un numero dentro de [low, high]; cualquier otra cosa usa `default`."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high:
+        return float(value)
+    return default
+
+
+def _highlight_mode_or_default(value: object) -> HighlightMode:
+    try:
+        return HighlightMode(value)
+    except ValueError:
+        return HighlightMode.MARKER
+
+
+def _frame_width_or_default(value: object) -> float:
+    """Grosor del marco del lente: un numero dentro de los limites; otra cosa usa el de siempre."""
+    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and MIN_LENS_FRAME_WIDTH <= value <= MAX_LENS_FRAME_WIDTH):
+        return float(value)
+    return DEFAULT_LENS_FRAME_WIDTH
 
 
 def _corner_or_default(value: object) -> float:
@@ -71,7 +114,11 @@ def item_to_dict(item: Annotation) -> dict:
         return {"type": "magnifier", "id": item.id, "source": _rect_to_list(item.source),
                 "lens_center": list(item.lens_center), "zoom": item.zoom,
                 "shape": item.shape.value, "connector": item.connector, "frame_color": item.frame_color,
-                "corner": item.corner}
+                "corner": item.corner, "frame_width": item.frame_width, "glow": item.glow,
+                "glow_color": item.glow_color}
+    if isinstance(item, Highlight):
+        return {"type": "highlight", "id": item.id, "rect": _rect_to_list(item.rect), "color": item.color,
+                "mode": item.mode.value, "opacity": item.opacity, "radius": item.radius}
     raise AnnotateError(f"Anotacion desconocida: {type(item).__name__}")
 
 
@@ -105,6 +152,15 @@ def item_from_dict(data: dict) -> Annotation:
                 data["id"], Rect(*data["source"]), tuple(data["lens_center"]), data["zoom"],
                 LensShape(data["shape"]), data["connector"], _color_or_none(data.get("frame_color")),
                 _corner_or_default(data.get("corner")),
+                _frame_width_or_default(data.get("frame_width")),
+                data.get("glow") is True, _color_or_none(data.get("glow_color")),
+            )
+        if kind == "highlight":
+            return Highlight(
+                data["id"], Rect(*data["rect"]), _color_or_none(data.get("color")),
+                _highlight_mode_or_default(data.get("mode")),
+                _number_or_default(data.get("opacity"), 0.05, 1.0, HIGHLIGHT_MARKER_OPACITY),
+                _number_or_default(data.get("radius"), 0.0, MAX_HIGHLIGHT_RADIUS, HIGHLIGHT_RADIUS),
             )
     except (KeyError, TypeError, ValueError) as exc:
         raise AnnotateError(f"Anotacion invalida en el proyecto ({kind}): {exc}") from exc
@@ -128,6 +184,7 @@ def save_doc(doc: AnnotationDoc, path: Path | None = None) -> Path:
         "style_scale": doc.style_scale,
         "padding": doc.padding,
         "palette": palette_to_dict(doc.palette),
+        "crop": None if doc.crop is None else _rect_to_list(doc.crop),
         "items": [item_to_dict(i) for i in doc.items],
     }
     try:
@@ -146,13 +203,15 @@ def load_doc(path: Path) -> AnnotationDoc:
         image_path = Path(data["image"])
         if not image_path.is_absolute():
             image_path = path.parent / image_path
+        image_size = tuple(data["image_size"])
         return AnnotationDoc(
             image_path=image_path,
-            image_size=tuple(data["image_size"]),
+            image_size=image_size,
             items=[item_from_dict(i) for i in data["items"]],
             style_scale=data.get("style_scale"),
             padding=data.get("padding", 0),
             palette=palette_from_dict(data.get("palette")),
+            crop=_crop_or_none(data.get("crop"), image_size),
         )
     except (KeyError, TypeError) as exc:
         raise AnnotateError(f"Proyecto de anotaciones incompleto ({path.name}): {exc}") from exc

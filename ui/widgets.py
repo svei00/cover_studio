@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSlider,
     QSpinBox,
     QWidget,
@@ -62,6 +63,37 @@ class ColorPickerButton(QWidget):
         color = QColorDialog.getColor(QColor(self._hex), self, "Elegir color")
         if color.isValid():
             self.set_hex_color(color.name())
+
+
+class ColorSwatchRow(QWidget):
+    """Fila de muestras de color para elegir de un clic entre unos pocos colores fijos
+    (p. ej. los de un resaltador). Emite colorPicked con el #RRGGBB elegido; set_current marca la
+    muestra que coincide con el color vigente (si no coincide ninguna, no marca ninguna)."""
+
+    colorPicked = Signal(str)
+
+    def __init__(self, swatches: tuple[tuple[str, str], ...], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._buttons: dict[str, QPushButton] = {}
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for name, hex_color in swatches:
+            button = QPushButton()
+            button.setFixedSize(30, 22)
+            button.setToolTip(name)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(lambda _checked=False, c=hex_color: self.colorPicked.emit(c))
+            self._buttons[hex_color.upper()] = button
+            layout.addWidget(button)
+        layout.addStretch(1)
+        self.set_current(None)
+
+    def set_current(self, hex_color: str | None) -> None:
+        current = hex_color.upper() if hex_color else None
+        for color, button in self._buttons.items():
+            border = "2px solid #FFFFFF" if color == current else "1px solid #00000060"
+            button.setStyleSheet(f"background-color: {color}; border: {border}; border-radius: 3px;")
 
 
 class SliderSpinBox(QWidget):

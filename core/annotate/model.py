@@ -8,7 +8,16 @@ from enum import Enum
 from pathlib import Path
 
 from core.annotate.palette import BRAND_PALETTE, Palette
-from core.annotate.style import CARD_FILL, CREAM, DEFAULT_LENS_CORNER, TAN, TEXT_PRESETS
+from core.annotate.style import (
+    CARD_FILL,
+    CREAM,
+    DEFAULT_LENS_CORNER,
+    DEFAULT_LENS_FRAME_WIDTH,
+    HIGHLIGHT_MARKER_OPACITY,
+    HIGHLIGHT_RADIUS,
+    TAN,
+    TEXT_PRESETS,
+)
 
 
 class ArrowSide(str, Enum):
@@ -23,6 +32,11 @@ class ArrowSide(str, Enum):
 class TextAlign(str, Enum):
     LEFT = "left"
     CENTER = "center"
+
+
+class HighlightMode(str, Enum):
+    MARKER = "marker"     # multiplica el color con lo de abajo: el texto negro sigue negro (fondos claros)
+    OVERLAY = "overlay"   # color translucido normal: tambien se ve sobre fondos oscuros
 
 
 class LensShape(str, Enum):
@@ -141,9 +155,26 @@ class Magnifier:
     connector: bool = True
     frame_color: str | None = None
     corner: float = DEFAULT_LENS_CORNER   # solo ROUNDED: 0 = esquinas rectas, 0.5 = muy redondeadas
+    frame_width: float = DEFAULT_LENS_FRAME_WIDTH   # grosor del marco; el origen y el conector llevan la mitad
+    glow: bool = False                    # resplandor alrededor del lente, como el del marcador
+    glow_color: str | None = None         # None = el de la paleta
 
 
-Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier
+@dataclass(frozen=True)
+class Highlight:
+    """Resaltador: relleno de color sobre una zona (texto, celdas). `color` None = el de la
+    paleta. `opacity` es la intensidad: en modo MARKER 1.0 es el color puro; en OVERLAY
+    conviene ~0.5."""
+
+    id: str
+    rect: Rect
+    color: str | None = None
+    mode: HighlightMode = HighlightMode.MARKER
+    opacity: float = HIGHLIGHT_MARKER_OPACITY
+    radius: float = HIGHLIGHT_RADIUS
+
+
+Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight
 
 
 @dataclass
@@ -154,6 +185,14 @@ class AnnotationDoc:
     style_scale: float | None = None
     padding: int = 0
     palette: Palette = BRAND_PALETTE
+    crop: Rect | None = None   # region visible de la imagen fuente; None = la imagen completa
+
+    @property
+    def view(self) -> Rect:
+        """Region de la imagen fuente que se muestra y se exporta (el recorte, o todo)."""
+        if self.crop is not None:
+            return self.crop
+        return Rect(0.0, 0.0, float(self.image_size[0]), float(self.image_size[1]))
 
 
 def text_label_from_preset(id: str, pos: tuple[float, float], text: str, preset: str = "nota") -> TextLabel:

@@ -27,6 +27,7 @@ class Palette:
     glow: str = style.GLOW_GOLD      # resplandor del marcador y de las flechas
     lens: str = style.TAN            # marco, contorno punteado y conector de la lupa
     step: str = style.GOLD           # circulo y numero de los pasos
+    highlight: str = style.HIGHLIGHT_YELLOW   # resaltador
 
 
 BRAND_PALETTE = Palette()
@@ -37,6 +38,7 @@ PALETTE_LABELS: dict[str, str] = {
     "glow": "Resplandor",
     "lens": "Marco de la lupa",
     "step": "Paso numerado",
+    "highlight": "Resaltador",
 }
 
 

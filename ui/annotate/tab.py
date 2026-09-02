@@ -56,11 +56,13 @@ TOOL_BUTTONS = (
     (Tool.SELECT, "Seleccionar", "Selecciona, mueve y redimensiona anotaciones"),
     (Tool.MARKER, "Marcador", "Recuadro con resplandor dorado y flecha: arrastra sobre la captura"),
     (Tool.MARKER_PLAIN, "Recuadro", "Marcador sin flecha: el mismo recuadro con resplandor, sin la flecha"),
+    (Tool.HIGHLIGHT, "Resaltar", "Resaltador: pinta una zona (texto, celdas) con un color translucido; arrastra sobre ella"),
     (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
     (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
     (Tool.LENS, "Lupa", "Amplia una zona en un lente aparte: arrastra sobre lo que quieres ampliar"),
+    (Tool.CROP, "Recortar", "Recorta la captura: arrastra lo que se queda; se puede deshacer y no toca el original"),
 )
 
 
@@ -316,7 +318,7 @@ class AnnotateTab(QWidget):
             try:
                 saved = load_doc(sidecar)
                 if tuple(saved.image_size) == image.size:
-                    doc = AnnotationDoc(path, image.size, saved.items, saved.style_scale, saved.padding, saved.palette)
+                    doc = AnnotationDoc(path, image.size, saved.items, saved.style_scale, saved.padding, saved.palette, saved.crop)
                     note = f" ({len(doc.items)} anotaciones recuperadas)"
                 else:
                     note = " (el proyecto guardado era de otra imagen; se ignoro)"
@@ -348,10 +350,13 @@ class AnnotateTab(QWidget):
             self._base_key = key
             self._lens_cache.clear()
         self.canvas.set_content(
-            self._base_qimage, build_primitives(self.doc), self._lens_images(), self.doc.padding
+            self._base_qimage, build_primitives(self.doc), self._lens_images(), self.doc.padding, self.doc.crop
         )
-        w, h = self.doc.image_size
-        self.info_label.setText(f"{self.doc.image_path.name} - {w} x {h} px - {len(self.doc.items)} anotaciones")
+        view = self.doc.view
+        size = f"{int(view.w)} x {int(view.h)} px"
+        if self.doc.crop is not None:
+            size += f" (recorte de {self.doc.image_size[0]} x {self.doc.image_size[1]})"
+        self.info_label.setText(f"{self.doc.image_path.name} - {size} - {len(self.doc.items)} anotaciones")
 
     def _lens_images(self) -> dict[str, QImage]:
         """Recorte ampliado de cada lupa, tomado del bitmap YA pixelado. Se

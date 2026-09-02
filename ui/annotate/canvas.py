@@ -9,11 +9,12 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from core.annotate import crop as cropping
 from core.annotate import edit
-from core.annotate.model import Arrow
+from core.annotate.model import Arrow, Rect
 from core.annotate.primitives import Primitive
 from core.annotate.style import CARD_FILL
-from ui.annotate.controller import EditController
+from ui.annotate.controller import EditController, Tool
 from ui.annotate.painter import paint_primitives
 
 MARGIN = 12
@@ -21,6 +22,7 @@ MAX_ZOOM = 2.0
 TOLERANCE_PX = 8.0  # tolerancia de clic en pixeles de pantalla
 HANDLE_PX = 9.0
 SELECTION_COLOR = "#4DA3FF"
+CROP_DIM = QColor(0, 0, 0, 150)
 NUDGE = 1.0
 NUDGE_BIG = 10.0
 HINT = "Arrastra una captura aqui, usa Abrir... o presiona CTRL + V"
@@ -37,12 +39,14 @@ class AnnotateCanvas(QWidget):
         self._primitives: list[Primitive] = []
         self._lens_images: Mapping[str, QImage] = {}
         self._padding = 0
+        self._crop: Rect | None = None
         self._controller: EditController | None = None
 
     def set_controller(self, controller: EditController) -> None:
         self._controller = controller
         controller.selectionChanged.connect(self.update)
         controller.toolChanged.connect(lambda _tool: self.update())
+        controller.cropDraftChanged.connect(self.update)
 
     def set_content(
         self,
@@ -50,8 +54,10 @@ class AnnotateCanvas(QWidget):
         primitives: Sequence[Primitive],
         lens_images: Mapping[str, QImage] | None = None,
         padding: int = 0,
+        crop: Rect | None = None,
     ) -> None:
         self._image = image
+        self._crop = crop
         self._primitives = list(primitives)
         self._lens_images = lens_images or {}
         self._padding = max(0, padding)
@@ -64,13 +70,28 @@ class AnnotateCanvas(QWidget):
     def has_image(self) -> bool:
         return self._image is not None and not self._image.isNull()
 
+    def _editing_crop(self) -> bool:
+        return self._controller is not None and self._controller.tool is Tool.CROP
+
+    def _frame(self) -> tuple[float, float, float, float, int]:
+        """(x, y, ancho, alto, margen): la region de la imagen que se muestra. Es el recorte
+        (o todo) y su margen extra; con la herramienta Recortar se ve la imagen completa para
+        poder agrandar o mover el recorte."""
+        assert self._image is not None
+        full = (0.0, 0.0, float(self._image.width()), float(self._image.height()))
+        if self._editing_crop():
+            return (*full, 0)
+        if self._crop is not None:
+            return self._crop.x, self._crop.y, self._crop.w, self._crop.h, self._padding
+        return (*full, self._padding)
+
     def view_layout(self) -> tuple[float, float, float]:
         """(escala, offset_x, offset_y) que ajustan la imagen al widget, centrada."""
         if not self.has_image():
             return 1.0, 0.0, 0.0
-        assert self._image is not None
-        content_w = self._image.width() + 2 * self._padding  # el margen extra tambien se ve
-        content_h = self._image.height() + 2 * self._padding
+        _fx, _fy, fw, fh, pad = self._frame()
+        content_w = fw + 2 * pad  # el margen extra tambien se ve
+        content_h = fh + 2 * pad
         avail_w = max(1, self.width() - 2 * MARGIN)
         avail_h = max(1, self.height() - 2 * MARGIN)
         scale = min(MAX_ZOOM, avail_w / content_w, avail_h / content_h)
@@ -80,11 +101,13 @@ class AnnotateCanvas(QWidget):
 
     def view_to_image(self, pos: QPointF) -> tuple[float, float]:
         scale, ox, oy = self.view_layout()
-        return (pos.x() - ox) / scale - self._padding, (pos.y() - oy) / scale - self._padding
+        fx, fy, _fw, _fh, pad = self._frame()
+        return (pos.x() - ox) / scale - pad + fx, (pos.y() - oy) / scale - pad + fy
 
     def image_to_view(self, point: tuple[float, float]) -> QPointF:
         scale, ox, oy = self.view_layout()
-        return QPointF(ox + (point[0] + self._padding) * scale, oy + (point[1] + self._padding) * scale)
+        fx, fy, _fw, _fh, pad = self._frame()
+        return QPointF(ox + (point[0] - fx + pad) * scale, oy + (point[1] - fy + pad) * scale)
 
     def _tolerance(self) -> float:
         """Tolerancia de clic convertida a pixeles de imagen."""
@@ -107,17 +130,49 @@ class AnnotateCanvas(QWidget):
         painter.save()
         painter.translate(ox, oy)
         painter.scale(scale, scale)
-        total_w = self._image.width() + 2 * self._padding
-        total_h = self._image.height() + 2 * self._padding
-        # solo se ve lo que se exportaria: lo que se sale de la imagen mas su margen se recorta
+        fx, fy, fw, fh, pad = self._frame()
+        total_w = fw + 2 * pad
+        total_h = fh + 2 * pad
+        # solo se ve lo que se exportaria: lo que se sale de la region mostrada mas su margen se recorta
         painter.setClipRect(QRectF(0, 0, total_w, total_h))
-        if self._padding:
+        if pad:
             painter.fillRect(QRectF(0, 0, total_w, total_h), QColor(CARD_FILL))
-            painter.translate(self._padding, self._padding)
+        painter.translate(pad - fx, pad - fy)
+        painter.save()
+        painter.setClipRect(QRectF(fx, fy, fw, fh), Qt.IntersectClip)
         painter.drawImage(0, 0, self._image)
+        painter.restore()
         paint_primitives(painter, self._primitives, self._lens_images)
         painter.restore()
+        if self._editing_crop():
+            self._paint_crop_overlay(painter)
         self._paint_selection(painter)
+
+    def _paint_crop_overlay(self, painter: QPainter) -> None:
+        """Con la herramienta Recortar: oscurece lo que quedaria fuera y dibuja las asas."""
+        if self._controller is None:
+            return
+        rect = self._controller.crop_rect()
+        assert self._image is not None
+        if rect is None:
+            return
+        full = QRectF(self.image_to_view((0.0, 0.0)), self.image_to_view((self._image.width(), self._image.height())))
+        inner = QRectF(self.image_to_view((rect.x, rect.y)), self.image_to_view((rect.right, rect.bottom)))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(CROP_DIM)
+        painter.drawRect(QRectF(full.left(), full.top(), full.width(), inner.top() - full.top()))
+        painter.drawRect(QRectF(full.left(), inner.bottom(), full.width(), full.bottom() - inner.bottom()))
+        painter.drawRect(QRectF(full.left(), inner.top(), inner.left() - full.left(), inner.height()))
+        painter.drawRect(QRectF(inner.right(), inner.top(), full.right() - inner.right(), inner.height()))
+        painter.setPen(QPen(QColor("#FFFFFF"), 1.5))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(inner)
+        painter.setPen(QPen(QColor(CARD_FILL), 1.5))
+        painter.setBrush(QColor("#FFFFFF"))
+        half = HANDLE_PX / 2
+        for point in cropping.crop_handles(rect).values():
+            c = self.image_to_view(point)
+            painter.drawRect(QRectF(c.x() - half, c.y() - half, HANDLE_PX, HANDLE_PX))
 
     def _paint_selection(self, painter: QPainter) -> None:
         """Caja y asas de la anotacion seleccionada, en pixeles de pantalla (no

@@ -15,12 +15,14 @@ from enum import Enum
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
+from core.annotate import crop as cropping
 from core.annotate import edit, lens
 from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    Highlight,
     Magnifier,
     Marker,
     Rect,
@@ -47,11 +49,13 @@ class Tool(str, Enum):
     SELECT = "select"
     MARKER = "marker"
     MARKER_PLAIN = "marker-plain"
+    HIGHLIGHT = "highlight"
     ARROW = "arrow"
     STEP = "step"
     TEXT = "text"
     REDACT = "redact"
     LENS = "lens"
+    CROP = "crop"
 
 
 _HANDLE_CURSORS = {
@@ -161,6 +165,7 @@ class EditController(QObject):
     selectionChanged = Signal()
     toolChanged = Signal(object)
     textEditRequested = Signal()
+    cropDraftChanged = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -174,6 +179,7 @@ class EditController(QObject):
         self._part: str | None = None
         self._grab: Point = (0.0, 0.0)
         self._anchor: Point = (0.0, 0.0)
+        self.crop_draft: Rect | None = None   # recorte en curso (solo durante el gesto)
 
     # ------------------------------------------------------------------
     # Estado
@@ -183,6 +189,7 @@ class EditController(QObject):
         self.doc = doc
         self.stack.clear()
         self._mode = None
+        self._set_crop_draft(None)
         self.tool = Tool.SELECT
         self.toolChanged.emit(self.tool)
         self.selected_id = None
@@ -205,6 +212,9 @@ class EditController(QObject):
         if tool is self.tool:
             return
         self.tool = tool
+        if self._mode in ("crop_create", "crop_resize"):
+            self._mode = None
+            self._set_crop_draft(None)
         if tool is not Tool.SELECT:
             self.select(None)
         self.toolChanged.emit(tool)
@@ -271,6 +281,27 @@ class EditController(QObject):
             return
         self.stack.push(_DocPropertyCommand(self, "palette", self.doc.palette, palette, "Colores", -1))
 
+    def _set_crop_draft(self, draft: Rect | None) -> None:
+        if draft != self.crop_draft:
+            self.crop_draft = draft
+            self.cropDraftChanged.emit()
+
+    def crop_rect(self) -> Rect | None:
+        """Rectangulo que muestra la herramienta Recortar: el borrador del gesto, el
+        recorte vigente o, si no hay, la imagen completa."""
+        if self.doc is None:
+            return None
+        return self.crop_draft or self.doc.crop or cropping.full_rect(self.doc.image_size)
+
+    def set_crop(self, rect: Rect | None) -> None:
+        """Aplica un recorte (None lo quita). Cada cambio es su propio paso de deshacer."""
+        if self.doc is None:
+            return
+        new = cropping.normalize_crop(rect, self.doc.image_size)
+        if new != self.doc.crop:
+            text = "Quitar recorte" if new is None else "Recortar"
+            self.stack.push(_DocPropertyCommand(self, "crop", self.doc.crop, new, text, -1))
+
     def set_style_scale(self, scale: float | None) -> None:
         """Escala de los trazos; None = automatica (segun el ancho de la imagen)."""
         if self.doc is None or scale == self.doc.style_scale:
@@ -287,9 +318,11 @@ class EditController(QObject):
         if self.doc is None:
             return
         p = edit.clamp_point(point, self.doc.image_size)
-        if self.tool is Tool.SELECT:
+        if self.tool is Tool.CROP:
+            self._press_crop(p, tol)
+        elif self.tool is Tool.SELECT:
             self._press_select(p, tol)
-        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.REDACT, Tool.ARROW, Tool.LENS):
+        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LENS):
             self._begin_create(p)
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
@@ -298,6 +331,17 @@ class EditController(QObject):
             item = text_label_from_preset(edit.new_id(self.doc.items), p, "Texto", "nota")
             self._commit_new(item)
             self.textEditRequested.emit()
+
+    def _press_crop(self, p: Point, tol: float) -> None:
+        assert self.doc is not None
+        current = self.crop_rect()
+        assert current is not None
+        handle = cropping.hit_crop_handle(current, p, tol)
+        if handle is not None:
+            self._mode, self._handle = "crop_resize", handle
+            self._set_crop_draft(current)
+        else:
+            self._mode, self._anchor = "crop_create", p
 
     def _press_select(self, p: Point, tol: float) -> None:
         assert self.doc is not None
@@ -320,6 +364,8 @@ class EditController(QObject):
             item: Annotation = Marker(item_id, Rect(p[0], p[1], 0.0, 0.0))
         elif self.tool is Tool.MARKER_PLAIN:
             item = Marker(item_id, Rect(p[0], p[1], 0.0, 0.0), arrow=ArrowSide.NONE)
+        elif self.tool is Tool.HIGHLIGHT:
+            item = Highlight(item_id, Rect(p[0], p[1], 0.0, 0.0))
         elif self.tool is Tool.REDACT:
             block = max(6, round(DEFAULT_REDACTION_BLOCK * self.scale()))
             item = Redaction(item_id, Rect(p[0], p[1], 0.0, 0.0), block)
@@ -337,9 +383,17 @@ class EditController(QObject):
         self.set_tool(Tool.SELECT)
 
     def move(self, point: Point) -> None:
-        if self.doc is None or self._mode is None or self._orig is None:
+        if self.doc is None or self._mode is None:
             return
         p = edit.clamp_point(point, self.doc.image_size)
+        if self._mode == "crop_create":
+            self._set_crop_draft(edit.rect_from_points(self._anchor, p))
+            return
+        if self._mode == "crop_resize" and self._handle is not None and self.crop_draft is not None:
+            self._set_crop_draft(cropping.resize_crop(self.crop_draft, self._handle, p))
+            return
+        if self._orig is None:
+            return
         if self._mode == "move":
             self._set_item(edit.move_item(self._orig, p[0] - self._grab[0], p[1] - self._grab[1], self._part))
         elif self._mode == "resize" and self._handle is not None:
@@ -356,6 +410,13 @@ class EditController(QObject):
     def release(self, point: Point) -> None:
         mode, orig = self._mode, self._orig
         self._mode = None
+        if mode in ("crop_create", "crop_resize"):
+            draft, self.crop_draft = self.crop_draft, None
+            self.cropDraftChanged.emit()
+            # un arrastre minusculo no crea (ni quita) el recorte; las asas ya respetan el minimo
+            if draft is not None and draft.w >= cropping.MIN_CROP and draft.h >= cropping.MIN_CROP:
+                self.set_crop(draft)
+            return
         if mode is None or orig is None:
             return
         current = self.item_by_id(orig.id)
@@ -378,7 +439,7 @@ class EditController(QObject):
             return abs(item.end[0] - item.start[0]) + abs(item.end[1] - item.start[1]) < MIN_ARROW
         if isinstance(item, Magnifier):
             return item.source.w < MIN_LENS_SOURCE or item.source.h < MIN_LENS_SOURCE
-        rect = item.rect  # Marker o Redaction
+        rect = item.rect  # Marker, Highlight o Redaction
         return rect.w < MIN_RECT or rect.h < MIN_RECT
 
     def _auto_lens_center(self, m: Magnifier, source: Rect | None = None) -> Point:
@@ -387,7 +448,9 @@ class EditController(QObject):
         assert self.doc is not None
         scale = self.scale()
         obstacles = [b for o in self.doc.items if o.id != m.id and (b := item_bounds(o, scale)) is not None]
-        return lens.default_lens_center(source or m.source, m.zoom, m.shape, self.doc.image_size, obstacles)
+        return lens.default_lens_center(
+            source or m.source, m.zoom, m.shape, self.doc.image_size, obstacles, region=self.doc.view
+        )
 
     def auto_place_selected_lens(self) -> None:
         """Recoloca el lente seleccionado en el lado con mas espacio libre."""
@@ -398,6 +461,10 @@ class EditController(QObject):
     def cursor_at(self, point: Point, tol: float) -> Qt.CursorShape:
         if self.doc is None:
             return Qt.ArrowCursor
+        if self.tool is Tool.CROP:
+            current = self.crop_rect()
+            handle = cropping.hit_crop_handle(current, point, tol) if current is not None else None
+            return _HANDLE_CURSORS[handle] if handle is not None else Qt.CrossCursor
         if self.tool is not Tool.SELECT:
             return Qt.CrossCursor
         selected = self.selected_item()
@@ -416,7 +483,10 @@ class EditController(QObject):
     def cancel(self) -> None:
         """Esc: cancela el gesto en curso; si no hay, vuelve a Seleccionar; si ya
         estaba, deselecciona."""
-        if self._mode is not None and self._orig is not None:
+        if self._mode in ("crop_create", "crop_resize"):
+            self._mode = None
+            self._set_crop_draft(None)
+        elif self._mode is not None and self._orig is not None:
             mode, orig = self._mode, self._orig
             self._mode = None
             if mode == "create":

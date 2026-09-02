@@ -296,7 +296,7 @@ def test_pasar_a_ovalada_conserva_las_proporciones_que_se_arrastraron(tab):
 def test_el_control_de_esquinas_solo_aparece_en_la_forma_rectangular(tab):
     draw_lens(tab)
     p = tab.panel
-    visible = lambda: p._lens_form.isRowVisible(p._lens_corner)  # noqa: E731
+    visible = lambda: p._lens_form.isRowVisible(p._lens_corner_row)  # noqa: E731
     assert not visible()                                          # circular
     p._lens_shape.setCurrentIndex(p._lens_shape.findData(LensShape.ELLIPSE.value))
     assert not visible()                                          # ovalada

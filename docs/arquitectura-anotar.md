@@ -309,3 +309,56 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   la linea de los centros. La seleccion de un ovalo ignora la esquina vacia de su caja.
 - Un ovalo recorta el texto en sus puntas: para texto conviene la forma rectangular.
 
+
+### Recorte no destructivo
+
+- `AnnotationDoc.crop: Rect | None` (pixeles de la fuente, enteros) y `doc.view` = el recorte o la imagen
+  completa. Las anotaciones NO se mueven: siguen en coordenadas de la fuente. `core/annotate/crop.py` (sin Qt)
+  tiene `normalize_crop` (limita a la imagen, redondea, descarta lo menor a 16 px o lo que cubre todo),
+  asas y `resize_crop`.
+- Export (`svg.py`): lienzo = `view` + margen, contenido trasladado por `-crop`. Al SVG solo viaja el bitmap
+  recortado (los pixeles de fuera no quedan en el archivo). Pixelados y lupas leen el bitmap COMPLETO.
+- `doc_scale` automatico usa el ancho del recorte (decision revisable: ver nota en siguiente-sesion).
+- Margen: `required_padding` mide contra `view`; lo que queda del todo fuera del recorte no pide margen y
+  `bounds.items_outside_view` lo cuenta para avisar en el panel. Colocacion automatica de flecha y lupa usan
+  `view` como region.
+- Herramienta Recortar (`Tool.CROP`): el lienzo muestra la imagen COMPLETA con lo de fuera oscurecido y 8 asas
+  (sin recorte, las asas estan en las esquinas de la imagen). El gesto vive en `controller.crop_draft` y al
+  soltar empuja UN `_DocPropertyCommand("crop")`. Un arrastre menor a 16 px no hace nada. `Esc` cancela.
+- El JSON guarda `"crop": [x, y, w, h] | null`; sin la clave o con un valor invalido abre la captura completa.
+
+### Lupa: grosor del borde y resplandor
+
+- `Magnifier.frame_width` (4 por defecto, 1 a 20, a escala 1): grosor del marco del lente. El contorno navy
+  vale `frame_width + 4`; el origen punteado y el conector llevan la mitad (`frame_width / 2`, contorno `+2`).
+  Con el valor por defecto el dibujo es identico al de siempre.
+- `Magnifier.glow` (apagado por defecto) y `glow_color` (None = paleta): los mismos 9 anillos del marcador,
+  alrededor del lente y siguiendo su forma (circulo, ovalo, rectangulo). Van DEBAJO de todo (conector y origen
+  encima; la imagen del lente tapa lo que cae dentro). El origen punteado no lleva resplandor.
+
+### Restablecer al valor por defecto (panel)
+
+- `PropertiesPanel._reset_row` / `_field_row`: doble clic en la etiqueta de un control (como en DaVinci
+  Resolve) o el boton de restablecer lo devuelven a su valor de fabrica. El boton solo se activa si el valor
+  ya no es el de fabrica (`_refresh_resets` al final de `sync`). Restablecer es SU PROPIO paso de deshacer,
+  asi que se puede volver al valor anterior.
+- Cubre: margen, escala de trazo, lado de flecha, tamano y alineacion del texto, bloque del pixelado, zoom,
+  forma, esquinas y grosor de la lupa, y el modo, intensidad y esquinas del resaltador. Las etiquetas de
+  color (de anotacion o de la paleta del documento) tambien: doble clic = color de la paleta / de marca.
+- El valor de fabrica puede depender del contexto (bloque del pixelado = 12 x escala; intensidad del
+  resaltador segun su modo): `_field_row` acepta una funcion como `default`.
+- Los checkboxes (resplandor, conector, negrita) no tienen restablecer.
+
+### Resaltador
+
+- `Highlight(id, rect, color=None, mode, opacity, radius)`; `Palette.highlight` es el color por defecto
+  (amarillo). `style.HIGHLIGHT_SWATCHES`: amarillo #FFF200, verde #7CFC00, rosa #FF69B4, naranja #FFA500, azul
+  claro #00BFFF (revisados sobre fondo claro y oscuro).
+- Dos modos, medidos con resvg y con el pintor de Qt (dan lo mismo):
+  - MARKER: `mix-blend-mode: multiply` (`PRect.blend`; en Qt, `CompositionMode_Multiply`). El color sale
+    puro y el texto negro sigue negro. Sobre fondo OSCURO casi no se ve (multiplicar por casi negro).
+  - OVERLAY: color translucido normal (intensidad 50 %). Se ve sobre oscuro; el texto pierde algo de contraste.
+  Cambiar de modo ajusta la intensidad (100 % / 50 %) en un solo paso de deshacer.
+- Se dibuja en el orden de la lista como cualquier anotacion (no es del bitmap): las lupas muestran la imagen
+  SIN resaltar. No cuenta como obstaculo para las flechas ni la lupa (`item_bounds` = None).
+- `ui/widgets.py::ColorSwatchRow`: fila de muestras reutilizable (aun solo la usa el resaltador).
