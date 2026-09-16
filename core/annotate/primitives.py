@@ -17,8 +17,10 @@ from core.annotate.model import (
     Arrow,
     ArrowSide,
     Highlight,
+    HeadStyle,
     HighlightMode,
     LensShape,
+    LineStyle,
     Magnifier,
     Marker,
     Rect,
@@ -41,8 +43,9 @@ class PRect:
     rx: float = 0.0
     fill: str | None = None
     fill_opacity: float = 1.0
-    dash: tuple[float, float] | None = None
+    dash: tuple[float, ...] | None = None
     blend: str | None = None   # 'multiply': se mezcla con lo de abajo (resaltador en modo Marcador)
+    cap: str = "butt"          # 'round' para los puntos de una linea punteada
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,8 @@ class PLine:
     stroke: str
     width: float
     opacity: float = 1.0
+    dash: tuple[float, ...] | None = None
+    cap: str = "butt"
 
 
 @dataclass(frozen=True)
@@ -70,8 +75,9 @@ class PCircle:
     fill: str | None
     stroke: str | None
     width: float = 0.0
-    dash: tuple[float, float] | None = None
+    dash: tuple[float, ...] | None = None
     opacity: float = 1.0
+    cap: str = "butt"
 
 
 @dataclass(frozen=True)
@@ -82,8 +88,9 @@ class PEllipse:
     fill: str | None
     stroke: str | None
     width: float = 0.0
-    dash: tuple[float, float] | None = None
+    dash: tuple[float, ...] | None = None
     opacity: float = 1.0
+    cap: str = "butt"
 
 
 @dataclass(frozen=True)
@@ -119,33 +126,78 @@ Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage
 # Flechas
 # --------------------------------------------------------------------------
 
-def _arrow_parts(
-    a: Point, b: Point, scale: float, glow: bool, color: str = style.RED, glow_color: str = style.GLOW_GOLD
+def dash_pattern(line_style: LineStyle, width: float) -> tuple[tuple[float, ...] | None, str]:
+    """(patron de rayas, tipo de remate) de un estilo de linea para un trazo de `width`. Las rayas se miden
+    en multiplos del grosor, asi que se ven igual de proporcionadas con cualquier grosor; las de puntos y
+    raya-punto llevan remate redondo (el punto es una raya casi nula con extremos redondos)."""
+    w = width
+    if line_style is LineStyle.DASHED:
+        return (3 * w, 2 * w), "butt"
+    if line_style is LineStyle.DOTTED:
+        return (0.01 * w, 2 * w), "round"
+    if line_style is LineStyle.DASH_DOT:
+        return (2 * w, 2.5 * w, 0.01 * w, 2.5 * w), "round"
+    return None, "butt"
+
+
+def _head_points(tip: Point, ux: float, uy: float, head: float) -> tuple[Point, Point, Point]:
+    """Triangulo de una punta de flecha con la punta en `tip`, mirando hacia (ux, uy)."""
+    bx, by = tip[0] - ux * head * 1.3, tip[1] - uy * head * 1.3
+    px, py = -uy, ux
+    return (
+        tip,
+        (bx + px * head * 0.8, by + py * head * 0.8),
+        (bx - px * head * 0.8, by - py * head * 0.8),
+    )
+
+
+def _line_parts(
+    a: Point,
+    b: Point,
+    scale: float,
+    glow: bool,
+    color: str = style.RED,
+    glow_color: str = style.GLOW_GOLD,
+    width: float = style.MARKER_STROKE,
+    head_start: HeadStyle = HeadStyle.NONE,
+    head_end: HeadStyle = HeadStyle.ARROW,
+    line_style: LineStyle = LineStyle.SOLID,
 ) -> list[Primitive]:
-    """Linea de a hacia b con punta en b, con el resplandor debajo."""
+    """Linea de a hacia b con puntas opcionales en cada extremo, con el resplandor debajo."""
     x1, y1 = a
     x2, y2 = b
     length = math.hypot(x2 - x1, y2 - y1)
     if length == 0:
         return []
-    sw = style.MARKER_STROKE * scale
-    head = style.ARROW_HEAD * scale
+    sw = width * scale
+    head = style.ARROW_HEAD * scale * min(3.0, max(0.5, width / style.MARKER_STROKE))   # la punta sigue al grosor
     ux, uy = (x2 - x1) / length, (y2 - y1) / length
-    bx, by = x2 - ux * head * 1.3, y2 - uy * head * 1.3
-    px, py = -uy, ux
-    pts = (
-        (x2, y2),
-        (bx + px * head * 0.8, by + py * head * 0.8),
-        (bx - px * head * 0.8, by - py * head * 0.8),
-    )
+    dash, cap = dash_pattern(line_style, sw)
+    extra = style.ARROW_GLOW_EXTRA * scale
+    heads = [(h, p, d) for h, p, d in ((head_end, b, (ux, uy)), (head_start, a, (-ux, -uy))) if h is not HeadStyle.NONE]
     parts: list[Primitive] = []
     if glow:
-        parts.append(PLine(a, b, glow_color, sw + style.ARROW_GLOW_EXTRA * scale, style.ARROW_GLOW_OPACITY))
-    parts.append(PLine(a, b, color, sw))
-    if glow:
-        parts.append(PPolygon(pts, None, glow_color, style.ARROW_GLOW_EXTRA * scale, style.ARROW_GLOW_OPACITY))
-    parts.append(PPolygon(pts, color, None))
+        parts.append(PLine(a, b, glow_color, sw + extra, style.ARROW_GLOW_OPACITY, dash, cap))
+    parts.append(PLine(a, b, color, sw, 1.0, dash, cap))
+    for kind, point, (dx, dy) in heads:
+        if kind is HeadStyle.DOT:
+            radius = max(sw * 1.2, head * 0.35)
+            if glow:
+                parts.append(PCircle(point, radius, None, glow_color, extra, opacity=style.ARROW_GLOW_OPACITY))
+            parts.append(PCircle(point, radius, color, None))
+        else:
+            pts = _head_points(point, dx, dy, head)
+            if glow:
+                parts.append(PPolygon(pts, None, glow_color, extra, style.ARROW_GLOW_OPACITY))
+            parts.append(PPolygon(pts, color, None))
     return parts
+
+
+def _arrow_parts(
+    a: Point, b: Point, scale: float, glow: bool, color: str = style.RED, glow_color: str = style.GLOW_GOLD
+) -> list[Primitive]:
+    """Linea de a hacia b con punta en b, con el resplandor debajo (la flecha de siempre)."""
+    return _line_parts(a, b, scale, glow, color, glow_color)
 
 
 def _marker_arrow_points(rect: Rect, side: ArrowSide, scale: float) -> tuple[Point, Point]:
@@ -259,7 +311,10 @@ def marker_primitives(
 
 
 def arrow_primitives(a: Arrow, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
-    return _arrow_parts(a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow)
+    return _line_parts(
+        a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow,
+        a.width, a.head_start, a.head_end, a.line_style,
+    )
 
 
 def step_extent(s: StepBadge, scale: float) -> float:
@@ -315,14 +370,20 @@ def highlight_primitives(h: Highlight, scale: float, palette: Palette = BRAND_PA
 
 
 def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
-    """Contorno punteado del origen, conector, imagen del lente y su marco. Cada trazo de
-    color lleva debajo uno navy mas ancho para que se lea sobre capturas claras."""
+    """Contorno del origen, conector, imagen del lente y su marco. Cada trazo de color lleva
+    debajo uno navy mas ancho (continuo) para que se lea sobre capturas claras. Marco, origen y
+    conector tienen cada uno su color, grosor y estilo de linea."""
     src = lens.effective_source(m)
     box = lens.lens_rect(m)
     frame = m.frame_color or palette.lens
-    dash = (6 * scale, 4 * scale)
     fw = m.frame_width                 # marco del lente (4 por defecto)
-    thin = fw / 2                      # origen punteado y conector (2 por defecto)
+    src_color = m.source_color or frame
+    src_w = m.source_width if m.source_width is not None else fw / 2        # origen (2 por defecto)
+    con_color = m.connector_color or frame
+    con_w = m.connector_width if m.connector_width is not None else fw / 2  # conector (2 por defecto)
+    src_dash, src_cap = dash_pattern(m.source_style, src_w * scale)
+    con_dash, con_cap = dash_pattern(m.connector_style, con_w * scale)
+    frame_dash, frame_cap = dash_pattern(m.frame_style, fw * scale)
     out: list[Primitive] = []
     rx = lens.lens_corner_radius(m) if m.shape is LensShape.ROUNDED else 0.0
 
@@ -340,30 +401,31 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
             else:
                 out.append(PRect(box.inflate(o), glow_color, width, op, rx + o))
 
+    sw = (src_w + 2) * scale   # el contorno navy del origen
     if m.shape is LensShape.CIRCLE:
-        out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, (thin + 2) * scale, opacity=0.6))
-        out.append(PCircle(src.center, src.w / 2, None, frame, thin * scale, dash=dash))
+        out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, sw, opacity=0.6))
+        out.append(PCircle(src.center, src.w / 2, None, src_color, src_w * scale, dash=src_dash, cap=src_cap))
     elif m.shape is LensShape.ELLIPSE:
-        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, style.CARD_FILL, (thin + 2) * scale, opacity=0.6))
-        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, frame, thin * scale, dash=dash))
+        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, style.CARD_FILL, sw, opacity=0.6))
+        out.append(PEllipse(src.center, src.w / 2, src.h / 2, None, src_color, src_w * scale, dash=src_dash, cap=src_cap))
     else:
-        out.append(PRect(src, style.CARD_FILL, (thin + 2) * scale, 0.6, 3 * scale))
-        out.append(PRect(src, frame, thin * scale, 1.0, 3 * scale, dash=dash))
+        out.append(PRect(src, style.CARD_FILL, sw, 0.6, 3 * scale))
+        out.append(PRect(src, src_color, src_w * scale, 1.0, 3 * scale, dash=src_dash, cap=src_cap))
 
     for a, b in lens.connector_segments(m):
-        out.append(PLine(a, b, style.CARD_FILL, (thin + 2) * scale, 0.6))
-        out.append(PLine(a, b, frame, thin * scale))
+        out.append(PLine(a, b, style.CARD_FILL, (con_w + 2) * scale, 0.6))
+        out.append(PLine(a, b, con_color, con_w * scale, 1.0, con_dash, con_cap))
 
     out.append(PImage(m.id, box, m.shape.value, rx))
     if m.shape is LensShape.CIRCLE:
         out.append(PCircle(box.center, box.w / 2, None, style.CARD_FILL, (fw + 4) * scale))
-        out.append(PCircle(box.center, box.w / 2, None, frame, fw * scale))
+        out.append(PCircle(box.center, box.w / 2, None, frame, fw * scale, dash=frame_dash, cap=frame_cap))
     elif m.shape is LensShape.ELLIPSE:
         out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, style.CARD_FILL, (fw + 4) * scale))
-        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, frame, fw * scale))
+        out.append(PEllipse(box.center, box.w / 2, box.h / 2, None, frame, fw * scale, dash=frame_dash, cap=frame_cap))
     else:
         out.append(PRect(box, style.CARD_FILL, (fw + 4) * scale, 1.0, rx))
-        out.append(PRect(box, frame, fw * scale, 1.0, rx))
+        out.append(PRect(box, frame, fw * scale, 1.0, rx, dash=frame_dash, cap=frame_cap))
     return out
 
 

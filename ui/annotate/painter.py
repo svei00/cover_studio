@@ -27,15 +27,16 @@ def _pen(
     width: float,
     opacity: float = 1.0,
     round_join: bool = False,
-    dash: tuple[float, float] | None = None,
+    dash: tuple[float, ...] | None = None,
+    cap: str = "butt",
 ) -> QPen:
     if not hex_color:
         return QPen(Qt.NoPen)
     pen = QPen(_color(hex_color, opacity), width)
-    pen.setCapStyle(Qt.FlatCap)
+    pen.setCapStyle(Qt.RoundCap if cap == "round" else Qt.FlatCap)
     pen.setJoinStyle(Qt.RoundJoin if round_join else Qt.MiterJoin)
     if dash and width > 0:
-        pen.setDashPattern([dash[0] / width, dash[1] / width])  # Qt mide el trazo en multiplos del grosor
+        pen.setDashPattern([d / width for d in dash])  # Qt mide el trazo en multiplos del grosor
     return pen
 
 
@@ -86,7 +87,7 @@ def paint_primitives(
         if isinstance(p, PImage):
             _paint_image(painter, p, images or {})
         elif isinstance(p, PRect):
-            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
             painter.setBrush(_brush(p.fill, p.fill_opacity))
             rect = QRectF(p.rect.x, p.rect.y, p.rect.w, p.rect.h)
             if p.blend == "multiply":
@@ -97,18 +98,18 @@ def paint_primitives(
                 painter.drawRect(rect)
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         elif isinstance(p, PLine):
-            painter.setPen(_pen(p.stroke, p.width, p.opacity))
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
             painter.drawLine(QPointF(*p.a), QPointF(*p.b))
         elif isinstance(p, PPolygon):
             painter.setPen(_pen(p.stroke, p.width, p.opacity, round_join=True))
             painter.setBrush(_brush(p.fill))
             painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in p.points]))
         elif isinstance(p, PCircle):
-            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
             painter.setBrush(_brush(p.fill))
             painter.drawEllipse(QPointF(*p.center), p.r, p.r)
         elif isinstance(p, PEllipse):
-            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash))
+            painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
             painter.setBrush(_brush(p.fill))
             painter.drawEllipse(QPointF(*p.center), p.rx, p.ry)
         elif isinstance(p, PText):

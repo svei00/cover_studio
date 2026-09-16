@@ -23,6 +23,7 @@ from core.annotate.model import (
     Arrow,
     ArrowSide,
     Highlight,
+    HeadStyle,
     Magnifier,
     Marker,
     Rect,
@@ -51,6 +52,7 @@ class Tool(str, Enum):
     MARKER_PLAIN = "marker-plain"
     HIGHLIGHT = "highlight"
     ARROW = "arrow"
+    LINE = "line"
     STEP = "step"
     TEXT = "text"
     REDACT = "redact"
@@ -61,7 +63,7 @@ class Tool(str, Enum):
 # Herramientas que se QUEDAN activas tras dibujar (dos recuadros seguidos sin volver a elegirla); se sale con
 # Esc o eligiendo otra. El texto no: abre su editor y lo normal es una sola etiqueta.
 STICKY_TOOLS = frozenset({
-    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.STEP, Tool.REDACT, Tool.LENS,
+    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.STEP, Tool.REDACT, Tool.LENS,
 })
 
 _HANDLE_CURSORS = {
@@ -340,7 +342,7 @@ class EditController(QObject):
             self._press_crop(p, tol)
         elif self.tool is Tool.SELECT:
             self._press_select(p, tol)
-        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LENS):
+        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.LENS):
             self._begin_create(p)
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
@@ -394,6 +396,8 @@ class EditController(QObject):
             item = Redaction(item_id, Rect(p[0], p[1], 0.0, 0.0), block)
         elif self.tool is Tool.LENS:
             item = Magnifier(item_id, Rect(p[0], p[1], 0.0, 0.0), p)
+        elif self.tool is Tool.LINE:
+            item = Arrow(item_id, p, p, head_end=HeadStyle.NONE)   # una flecha sin puntas
         else:
             item = Arrow(item_id, p, p)
         self._insert(item)

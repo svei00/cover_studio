@@ -16,10 +16,15 @@ from core.annotate.style import (
     HIGHLIGHT_RADIUS,
     MAX_HIGHLIGHT_RADIUS,
     MAX_LENS_FRAME_WIDTH,
+    MAX_LENS_PART_WIDTH,
+    MAX_LINE_WIDTH,
     MAX_NUMBER_SIZE,
     MAX_STEP_SIZE,
     MAX_STEP_STROKE,
+    MARKER_STROKE,
     MIN_LENS_FRAME_WIDTH,
+    MIN_LENS_PART_WIDTH,
+    MIN_LINE_WIDTH,
     MIN_NUMBER_SIZE,
     MIN_STEP_SIZE,
     MIN_STEP_STROKE,
@@ -32,8 +37,10 @@ from core.annotate.model import (
     Arrow,
     ArrowSide,
     Highlight,
+    HeadStyle,
     HighlightMode,
     LensShape,
+    LineStyle,
     Magnifier,
     Marker,
     Rect,
@@ -93,6 +100,13 @@ def _number_or_none(value: object, low: float, high: float) -> float | None:
     return None
 
 
+def _enum_or_default(enum_type, value: object, default):
+    try:
+        return enum_type(value)
+    except ValueError:
+        return default
+
+
 def _step_shape_or_default(value: object) -> StepShape:
     try:
         return StepShape(value)
@@ -137,7 +151,9 @@ def item_to_dict(item: Annotation) -> dict:
     if isinstance(item, Arrow):
         return {"type": "arrow", "id": item.id, "start": list(item.start),
                 "end": list(item.end), "glow": item.glow, "color": item.color,
-                "glow_color": item.glow_color}
+                "glow_color": item.glow_color, "head_start": item.head_start.value,
+                "head_end": item.head_end.value, "line_style": item.line_style.value,
+                "width": item.width}
     if isinstance(item, StepBadge):
         return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
                 "color": item.color, "shape": item.shape.value, "fill_color": item.fill_color,
@@ -156,7 +172,10 @@ def item_to_dict(item: Annotation) -> dict:
                 "lens_center": list(item.lens_center), "zoom": item.zoom,
                 "shape": item.shape.value, "connector": item.connector, "frame_color": item.frame_color,
                 "corner": item.corner, "frame_width": item.frame_width, "glow": item.glow,
-                "glow_color": item.glow_color}
+                "glow_color": item.glow_color, "frame_style": item.frame_style.value,
+                "source_color": item.source_color, "source_width": item.source_width,
+                "source_style": item.source_style.value, "connector_color": item.connector_color,
+                "connector_width": item.connector_width, "connector_style": item.connector_style.value}
     if isinstance(item, Highlight):
         return {"type": "highlight", "id": item.id, "rect": _rect_to_list(item.rect), "color": item.color,
                 "mode": item.mode.value, "opacity": item.opacity, "radius": item.radius}
@@ -177,6 +196,10 @@ def item_from_dict(data: dict) -> Annotation:
             return Arrow(
                 data["id"], tuple(data["start"]), tuple(data["end"]), data["glow"],
                 _color_or_none(data.get("color")), _color_or_none(data.get("glow_color")),
+                _enum_or_default(HeadStyle, data.get("head_start"), HeadStyle.NONE),
+                _enum_or_default(HeadStyle, data.get("head_end"), HeadStyle.ARROW),
+                _enum_or_default(LineStyle, data.get("line_style"), LineStyle.SOLID),
+                _number_or_default(data.get("width"), MIN_LINE_WIDTH, MAX_LINE_WIDTH, MARKER_STROKE),
             )
         if kind == "step":
             return StepBadge(
@@ -204,6 +227,13 @@ def item_from_dict(data: dict) -> Annotation:
                 _corner_or_default(data.get("corner")),
                 _frame_width_or_default(data.get("frame_width")),
                 data.get("glow") is True, _color_or_none(data.get("glow_color")),
+                _enum_or_default(LineStyle, data.get("frame_style"), LineStyle.SOLID),
+                _color_or_none(data.get("source_color")),
+                _number_or_none(data.get("source_width"), MIN_LENS_PART_WIDTH, MAX_LENS_PART_WIDTH),
+                _enum_or_default(LineStyle, data.get("source_style"), LineStyle.DASHED),
+                _color_or_none(data.get("connector_color")),
+                _number_or_none(data.get("connector_width"), MIN_LENS_PART_WIDTH, MAX_LENS_PART_WIDTH),
+                _enum_or_default(LineStyle, data.get("connector_style"), LineStyle.SOLID),
             )
         if kind == "highlight":
             return Highlight(

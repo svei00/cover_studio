@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -38,6 +39,7 @@ from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
 from ui.annotate.controller import STICKY_TOOLS, EditController, Tool
 from ui.annotate.panel import PropertiesPanel
 from ui.dialogs import OverwriteConfirmDialog
+from ui.flow_layout import FlowLayout, spacer
 
 
 def captures_dir() -> Path:
@@ -58,6 +60,7 @@ TOOL_BUTTONS = (
     (Tool.MARKER_PLAIN, "Recuadro", "Marcador sin flecha: el mismo recuadro con resplandor, sin la flecha"),
     (Tool.HIGHLIGHT, "Resaltar", "Resaltador: pinta una zona (texto, celdas) con un color translucido; arrastra sobre ella"),
     (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
+    (Tool.LINE, "Linea", "Linea recta (sirve de conector): arrastra del inicio al final; las puntas y el estilo se eligen en el panel"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
     (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
@@ -111,7 +114,7 @@ class AnnotateTab(QWidget):
         self._redacted: Image.Image | None = None
         self._lens_cache: dict[str, tuple[tuple, QImage]] = {}
 
-        tools = QHBoxLayout()
+        tools = FlowLayout()   # si no caben en una fila, bajan a la siguiente (la ventana no se ensancha)
         self.tool_buttons: dict[Tool, QToolButton] = {}
         group = QButtonGroup(self)
         group.setExclusive(True)
@@ -126,7 +129,7 @@ class AnnotateTab(QWidget):
             self.tool_buttons[tool] = button
             tools.addWidget(button)
         self.tool_buttons[Tool.SELECT].setChecked(True)
-        tools.addSpacing(16)
+        tools.addWidget(spacer(16))
         self.undo_btn = QToolButton()
         self.undo_btn.setText("Deshacer")
         self.undo_btn.setToolTip("CTRL + Z")
@@ -144,7 +147,6 @@ class AnnotateTab(QWidget):
         self.delete_btn.clicked.connect(self.controller.delete_selected)
         for widget in (self.undo_btn, self.redo_btn, self.delete_btn):
             tools.addWidget(widget)
-        tools.addStretch(1)
 
         self.fit_btn = QToolButton()
         self.fit_btn.setText("Ajustar")
@@ -157,6 +159,8 @@ class AnnotateTab(QWidget):
         self.zoom_label = QLabel("Zoom: -")
         zoom_hint = QLabel("Rueda: zoom - Boton central o Espacio + arrastrar: mover")
         zoom_hint.setStyleSheet("color: #888888;")
+        zoom_hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # en ventanas estrechas se recorta
+        zoom_hint.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         zoom_row = QHBoxLayout()
         for widget in (self.fit_btn, self.actual_btn, self.zoom_label):
             zoom_row.addWidget(widget)

@@ -6,17 +6,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
     QToolButton,
@@ -29,9 +32,11 @@ from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
 from core.annotate.model import (
     Arrow,
     ArrowSide,
+    HeadStyle,
     Highlight,
     HighlightMode,
     LensShape,
+    LineStyle,
     Magnifier,
     Marker,
     Redaction,
@@ -50,13 +55,18 @@ from core.annotate.style import (
     HIGHLIGHT_OVERLAY_OPACITY,
     HIGHLIGHT_RADIUS,
     HIGHLIGHT_SWATCHES,
+    MARKER_STROKE,
     MAX_HIGHLIGHT_RADIUS,
     MAX_LENS_FRAME_WIDTH,
+    MAX_LENS_PART_WIDTH,
+    MAX_LINE_WIDTH,
     MAX_NUMBER_SIZE,
     MAX_SCALE,
     MAX_STEP_SIZE,
     MAX_STEP_STROKE,
     MIN_LENS_FRAME_WIDTH,
+    MIN_LENS_PART_WIDTH,
+    MIN_LINE_WIDTH,
     MIN_NUMBER_SIZE,
     MIN_SCALE,
     MIN_STEP_SIZE,
@@ -77,6 +87,13 @@ ARROW_LABELS = {
     ArrowSide.NONE: "Sin flecha",
 }
 ALIGN_LABELS = {TextAlign.LEFT: "Izquierda", TextAlign.CENTER: "Centrada"}
+LINE_STYLE_LABELS = {
+    LineStyle.SOLID: "Continua",
+    LineStyle.DASHED: "De rayas",
+    LineStyle.DOTTED: "De puntos",
+    LineStyle.DASH_DOT: "Raya y punto",
+}
+HEAD_LABELS = {HeadStyle.NONE: "Sin punta", HeadStyle.ARROW: "Flecha", HeadStyle.DOT: "Punto"}
 STEP_SHAPE_LABELS = {
     StepShape.CIRCLE: "Circulo",
     StepShape.SQUARE: "Cuadrado",
@@ -177,10 +194,15 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_crop_page())
         self._pages.addWidget(self._build_highlight_page())
 
+        # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setWidget(self._pages)
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)
-        layout.addWidget(self._pages)
-        layout.addStretch(1)
+        layout.addWidget(self._scroll, stretch=1)
 
         controller.selectionChanged.connect(self.sync)
         controller.toolChanged.connect(lambda _tool: self.sync())
@@ -304,6 +326,15 @@ class PropertiesPanel(QWidget):
             return item is None or not hasattr(item, field) or getattr(item, field) == value()
 
         return self._reset_row(form, text, control, reset, is_default)
+
+    def _fit_page_size(self) -> None:
+        """El panel mide lo que la pagina visible (no la mas alta de todas): las demas no cuentan."""
+        current = self._pages.currentWidget()
+        for index in range(self._pages.count()):
+            page = self._pages.widget(index)
+            policy = QSizePolicy.Preferred if page is current else QSizePolicy.Ignored
+            page.setSizePolicy(policy, policy)
+        self._pages.updateGeometry()
 
     def _refresh_resets(self) -> None:
         for button, is_default in self._resets:
@@ -454,12 +485,37 @@ class PropertiesPanel(QWidget):
     def _build_arrow_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
+        self._arrow_head_start = self._head_combo("head_start")
+        self._field_row(form, "Punta inicial", self._arrow_head_start, "head_start", HeadStyle.NONE)
+        self._arrow_head_end = self._head_combo("head_end")
+        self._field_row(form, "Punta final", self._arrow_head_end, "head_end", HeadStyle.ARROW)
+        self._arrow_style = QComboBox()
+        for line_style, label in LINE_STYLE_LABELS.items():
+            self._arrow_style.addItem(label, line_style.value)
+        self._arrow_style.currentIndexChanged.connect(
+            lambda _i: self._apply(line_style=LineStyle(self._arrow_style.currentData()))
+        )
+        self._field_row(form, "Estilo", self._arrow_style, "line_style", LineStyle.SOLID)
+        self._arrow_width = QDoubleSpinBox()
+        self._arrow_width.setRange(MIN_LINE_WIDTH, MAX_LINE_WIDTH)
+        self._arrow_width.setDecimals(1)
+        self._arrow_width.setSingleStep(0.5)
+        self._arrow_width.setSuffix(" px")
+        self._arrow_width.valueChanged.connect(lambda v: self._apply(width=float(v)))
+        self._field_row(form, "Grosor", self._arrow_width, "width", MARKER_STROKE)
         self._arrow_glow = QCheckBox("Resplandor")
         self._arrow_glow.toggled.connect(lambda on: self._apply(glow=on))
         form.addRow(self._arrow_glow)
-        self._arrow_color = self._color_row(form, "Flecha", "color")
+        self._arrow_color = self._color_row(form, "Color", "color")
         self._arrow_glow_color = self._color_row(form, "Resplandor", "glow_color")
         return page
+
+    def _head_combo(self, field: str) -> QComboBox:
+        combo = QComboBox()
+        for head, label in HEAD_LABELS.items():
+            combo.addItem(label, head.value)
+        combo.currentIndexChanged.connect(lambda _i: self._apply(**{field: HeadStyle(combo.currentData())}))
+        return combo
 
     def _build_step_page(self) -> QWidget:
         page = QWidget()
@@ -592,21 +648,73 @@ class PropertiesPanel(QWidget):
         self._lens_corner_row = self._field_row(form, "Esquinas", self._lens_corner, "corner", DEFAULT_LENS_CORNER)
         self._lens_form = form
         form.addRow(self._lens_connector)
-        self._lens_frame = self._color_row(form, "Marco", "frame_color")
+
+        self._section(form, "Marco del lente")
+        self._lens_frame = self._color_row(form, "Color", "frame_color")
         self._lens_frame_width = QDoubleSpinBox()
         self._lens_frame_width.setRange(MIN_LENS_FRAME_WIDTH, MAX_LENS_FRAME_WIDTH)
         self._lens_frame_width.setSingleStep(0.5)
         self._lens_frame_width.setDecimals(1)
         self._lens_frame_width.setSuffix(" px")
-        self._lens_frame_width.setToolTip("Grosor del borde del lente; el origen punteado y el conector llevan la mitad")
+        self._lens_frame_width.setToolTip("Grosor del borde del lente; en la zona de origen y el conector, Auto = la mitad")
         self._lens_frame_width.valueChanged.connect(lambda v: self._apply(frame_width=float(v)))
-        self._field_row(form, "Grosor del borde", self._lens_frame_width, "frame_width", DEFAULT_LENS_FRAME_WIDTH)
+        self._field_row(form, "Grosor", self._lens_frame_width, "frame_width", DEFAULT_LENS_FRAME_WIDTH)
+        self._lens_frame_style = self._line_style_combo("frame_style")
+        self._field_row(form, "Estilo", self._lens_frame_style, "frame_style", LineStyle.SOLID)
+
+        self._section(form, "Zona de origen")
+        self._lens_source_color = self._color_row(form, "Color", "source_color")
+        self._lens_source_width = self._part_width_spin("source_width")
+        self._field_row(form, "Grosor", self._lens_source_width, "source_width", None)
+        self._lens_source_style = self._line_style_combo("source_style")
+        self._field_row(form, "Estilo", self._lens_source_style, "source_style", LineStyle.DASHED)
+
+        self._lens_connector_header = self._section(form, "Conector")
+        self._lens_connector_color = self._color_row(form, "Color", "connector_color")
+        self._lens_connector_width = self._part_width_spin("connector_width")
+        self._lens_connector_width_row = self._field_row(form, "Grosor", self._lens_connector_width, "connector_width", None)
+        self._lens_connector_style = self._line_style_combo("connector_style")
+        self._lens_connector_style_row = self._field_row(form, "Estilo", self._lens_connector_style, "connector_style", LineStyle.SOLID)
+
+        self._section(form, "Resplandor")
         self._lens_glow = QCheckBox("Resplandor")
         self._lens_glow.toggled.connect(lambda on: self._apply(glow=on))
         form.addRow(self._lens_glow)
         self._lens_glow_color = self._color_row(form, "Color", "glow_color")
         form.addRow(replace_btn)
         return page
+
+    @staticmethod
+    def _section(form: QFormLayout, text: str) -> QLabel:
+        """Titulo de un grupo de controles dentro de un formulario."""
+        label = QLabel(text)
+        font = label.font()
+        font.setBold(True)
+        label.setFont(font)
+        label.setContentsMargins(0, 8, 0, 0)
+        form.addRow(label)
+        return label
+
+    def _line_style_combo(self, field: str) -> QComboBox:
+        combo = QComboBox()
+        for line_style, label in LINE_STYLE_LABELS.items():
+            combo.addItem(label, line_style.value)
+        combo.currentIndexChanged.connect(lambda _i: self._apply(**{field: LineStyle(combo.currentData())}))
+        return combo
+
+    def _part_width_spin(self, field: str) -> QDoubleSpinBox:
+        """Grosor propio de una parte de la lupa; 0 = Auto (la mitad del grosor del marco)."""
+        spin = QDoubleSpinBox()
+        spin.setRange(0.0, MAX_LENS_PART_WIDTH)
+        spin.setSingleStep(0.5)
+        spin.setDecimals(1)
+        spin.setSuffix(" px")
+        spin.setSpecialValueText("Auto")
+        spin.setToolTip("Auto = la mitad del grosor del marco del lente")
+        spin.valueChanged.connect(
+            lambda v: self._apply(**{field: max(float(v), MIN_LENS_PART_WIDTH) if v > 0 else None})
+        )
+        return spin
 
     # ------------------------------------------------------------------
     # Edicion y sincronizacion
@@ -655,7 +763,14 @@ class PropertiesPanel(QWidget):
                 self._marker_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
             elif isinstance(item, Arrow):
                 self._pages.setCurrentIndex(_PAGE_ARROW)
-                self._title.setText("Flecha")
+                self._title.setText(
+                    "Linea" if item.head_start is HeadStyle.NONE and item.head_end is HeadStyle.NONE else "Flecha"
+                )
+                self._set_combo(self._arrow_head_start, item.head_start.value)
+                self._set_combo(self._arrow_head_end, item.head_end.value)
+                self._set_combo(self._arrow_style, item.line_style.value)
+                if abs(self._arrow_width.value() - item.width) > 1e-9:
+                    self._arrow_width.setValue(item.width)
                 self._arrow_glow.setChecked(item.glow)
                 self._arrow_color.set_value(item.color or pal.arrow, item.color is not None)
                 self._arrow_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
@@ -703,6 +818,17 @@ class PropertiesPanel(QWidget):
                 self._lens_frame.set_value(item.frame_color or pal.lens, item.frame_color is not None)
                 if abs(self._lens_frame_width.value() - item.frame_width) > 1e-9:
                     self._lens_frame_width.setValue(item.frame_width)
+                self._set_combo(self._lens_frame_style, item.frame_style.value)
+                inherited = item.frame_color or pal.lens   # origen y conector sin color propio siguen al marco
+                self._lens_source_color.set_value(item.source_color or inherited, item.source_color is not None)
+                self._set_spin(self._lens_source_width, item.source_width or 0.0)
+                self._set_combo(self._lens_source_style, item.source_style.value)
+                self._lens_connector_color.set_value(item.connector_color or inherited, item.connector_color is not None)
+                self._set_spin(self._lens_connector_width, item.connector_width or 0.0)
+                self._set_combo(self._lens_connector_style, item.connector_style.value)
+                for row in (self._lens_connector_header, self._lens_connector_color,
+                            self._lens_connector_width_row, self._lens_connector_style_row):
+                    self._lens_form.setRowVisible(row, item.connector)
                 self._lens_glow.setChecked(item.glow)
                 self._lens_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._lens_form.setRowVisible(self._lens_glow_color, item.glow)
@@ -727,6 +853,7 @@ class PropertiesPanel(QWidget):
                 self._title.setText("Propiedades")
             self._sync_document()
             self._refresh_resets()
+            self._fit_page_size()
         finally:
             self._syncing = False
 
@@ -783,6 +910,11 @@ class PropertiesPanel(QWidget):
         self._crop_size.setText(
             f"{int(rect.w)} x {int(rect.h)} px" if shown else "Sin recorte (imagen completa)"
         )
+
+    @staticmethod
+    def _set_spin(spin: QDoubleSpinBox, value: float) -> None:
+        if abs(spin.value() - value) > 1e-9:
+            spin.setValue(value)
 
     @staticmethod
     def _set_combo(combo: QComboBox, data: str) -> None:

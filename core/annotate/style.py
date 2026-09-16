@@ -43,10 +43,14 @@ HIGHLIGHT_MARKER_OPACITY = 1.0   # modo Marcador (multiplicar): el color puro, e
 HIGHLIGHT_OVERLAY_OPACITY = 0.5  # modo Translucido: se ve sobre fondos oscuros, el texto pierde algo de contraste
 
 MARKER_STROKE = 5.0
+MIN_LINE_WIDTH = 1.0
+MAX_LINE_WIDTH = 24.0
 DEFAULT_LENS_CORNER = 0.12   # esquinas del lente rectangular, como fraccion del lado menor
 DEFAULT_LENS_FRAME_WIDTH = 4.0   # grosor del marco del lente (a escala 1); el origen y el conector llevan la mitad
 MIN_LENS_FRAME_WIDTH = 1.0
 MAX_LENS_FRAME_WIDTH = 20.0
+MIN_LENS_PART_WIDTH = 0.5    # grosor propio del origen o del conector
+MAX_LENS_PART_WIDTH = 20.0
 MARKER_RX = 6.0
 ARROW_LENGTH = 72.0
 ARROW_GAP = 6.0

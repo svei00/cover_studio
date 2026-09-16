@@ -426,3 +426,33 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   paso. Panel: forma, tres colores (doble clic en la etiqueta = valor de fabrica), tamano, tamano del numero
   ("Auto" = 0), grosor y resplandor, todos con restablecer.
 - No hay asas de tamano en el lienzo (solo el panel). Los pasos nuevos salen siempre con el estilo de fabrica.
+
+### Linea / conector y estilos de linea
+
+- No hay una anotacion nueva: `Arrow` suma `head_start`/`head_end` (`HeadStyle`: ninguna, flecha, punto),
+  `line_style` (`LineStyle`: continua, de rayas, de puntos, raya y punto) y `width` (grosor a escala 1, 5 por
+  defecto). La herramienta **Linea** crea una `Arrow` con `head_end=NONE` (una linea recta, util de conector); sin
+  puntas en ningun extremo el panel la titula "Linea", si no "Flecha". Seleccion, asas, mover y deshacer son
+  los de la flecha. Un dato invalido o ausente del JSON usa el de siempre (flecha con punta final, continua, 5).
+- Infraestructura comun, tambien para la lupa: `primitives.dash_pattern(estilo, grosor)` devuelve (rayas, remate).
+  Las rayas se miden en MULTIPLOS DEL GROSOR (de rayas 3w/2w, de puntos ~0/2w con remate redondo, raya-punto
+  2w/2.5w/~0/2.5w), asi se ven proporcionadas con cualquier grosor. `PLine`, `PRect`, `PCircle` y `PEllipse`
+  tienen `dash` (tupla de cualquier largo par) y `cap` ("butt" o "round"); el SVG escribe `stroke-dasharray` con
+  3 decimales y `stroke-linecap`; el pintor de Qt usa `QPen.setDashPattern` (en multiplos del grosor) y
+  `RoundCap`. Hay un test que MIDE que resvg y Qt dejan la misma proporcion de tinta por estilo.
+- La punta sigue al grosor (x0.5 a x3 de la de 13 px) y el resplandor de una linea de rayas lleva las mismas rayas.
+- `ui/flow_layout.py`: la barra de herramientas es un `FlowLayout` (baja a una segunda fila si no cabe). Con la
+  herramienta nueva la fila sola obligaba a la ventana a medir 1704 px; ahora el minimo es ~1292 (lo fija la
+  barra superior). La etiqueta de ayuda del zoom se recorta en ventanas estrechas.
+
+### Lupa: marco, origen y conector independientes
+
+- `Magnifier` suma `frame_style`, `source_color/width/style` y `connector_color/width/style`. Color None = el
+  del marco; grosor None = "Auto" = la mitad del grosor del marco (como siempre); estilos de siempre: marco
+  continuo, origen de rayas, conector continuo. Con los valores por defecto el dibujo es identico (el origen de
+  rayas de 6/4 px sale de `dash_pattern(DASHED, 2)`).
+- El contorno navy que da contraste (60 % de opacidad, ancho + 2) es SIEMPRE continuo, incluso bajo rayas o
+  puntos: es parte del diseno de la lupa. El del conector circular son dos tangentes con el mismo estilo.
+- Panel: secciones (Marco del lente, Zona de origen, Conector, Resplandor) con color, grosor y estilo, todos con
+  restablecer; sin conector se ocultan los controles del conector. El panel ahora esta en un `QScrollArea` y las
+  paginas que no se ven no cuentan para su alto (`_fit_page_size`).

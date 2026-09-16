@@ -15,6 +15,7 @@ from core.annotate.style import (
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
+    MARKER_STROKE,
     STEP_RADIUS,
     STEP_STROKE,
     TAN,
@@ -34,6 +35,19 @@ class ArrowSide(str, Enum):
 class TextAlign(str, Enum):
     LEFT = "left"
     CENTER = "center"
+
+
+class LineStyle(str, Enum):
+    SOLID = "solid"          # continua
+    DASHED = "dashed"        # de rayas
+    DOTTED = "dotted"        # de puntos
+    DASH_DOT = "dash-dot"    # raya y punto
+
+
+class HeadStyle(str, Enum):
+    NONE = "none"
+    ARROW = "arrow"
+    DOT = "dot"
 
 
 class StepShape(str, Enum):
@@ -107,7 +121,8 @@ class Marker:
 
 @dataclass(frozen=True)
 class Arrow:
-    """Flecha suelta: apunta de start a end."""
+    """Flecha suelta: de start a end, con punta al final. Con head_end=NONE y head_start=NONE es una
+    LINEA (la herramienta Linea la crea asi), util de conector. `width` es el grosor a escala 1."""
 
     id: str
     start: tuple[float, float]
@@ -115,6 +130,10 @@ class Arrow:
     glow: bool = True
     color: str | None = None
     glow_color: str | None = None
+    head_start: HeadStyle = HeadStyle.NONE
+    head_end: HeadStyle = HeadStyle.ARROW
+    line_style: LineStyle = LineStyle.SOLID
+    width: float = MARKER_STROKE
 
 
 @dataclass(frozen=True)
@@ -185,6 +204,15 @@ class Magnifier:
     frame_width: float = DEFAULT_LENS_FRAME_WIDTH   # grosor del marco; el origen y el conector llevan la mitad
     glow: bool = False                    # resplandor alrededor del lente, como el del marcador
     glow_color: str | None = None         # None = el de la paleta
+    # las tres partes de la lupa se pueden estilizar por separado. Color None = el del marco; grosor None =
+    # la mitad del grosor del marco ("auto"). El estilo de siempre: marco continuo, origen de rayas, conector continuo.
+    frame_style: LineStyle = LineStyle.SOLID
+    source_color: str | None = None
+    source_width: float | None = None
+    source_style: LineStyle = LineStyle.DASHED
+    connector_color: str | None = None
+    connector_width: float | None = None
+    connector_style: LineStyle = LineStyle.SOLID
 
 
 @dataclass(frozen=True)

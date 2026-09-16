@@ -32,8 +32,12 @@ def _f(value: float) -> str:
     return f"{value:.2f}"
 
 
-def _dash(dash: tuple[float, float] | None) -> str:
-    return f' stroke-dasharray="{_f(dash[0])} {_f(dash[1])}"' if dash else ""
+def _dash(dash: tuple[float, ...] | None, cap: str = "butt") -> str:
+    """Rayas (con 3 decimales: los puntos son rayas casi nulas) y remate del trazo."""
+    if not dash:
+        return ""
+    values = " ".join(f"{v:.3f}" for v in dash)
+    return f' stroke-dasharray="{values}"' + (' stroke-linecap="round"' if cap == "round" else "")
 
 
 def _image_to_svg(p: PImage, crops: Mapping[str, Image.Image] | None) -> str:
@@ -69,7 +73,7 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
         fill = f'fill="{p.fill}" fill-opacity="{p.fill_opacity}"' if p.fill else 'fill="none"'
         stroke = (
             f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"'
-            f'{_dash(p.dash)}'
+            f'{_dash(p.dash, p.cap)}'
             if p.stroke
             else ""
         )
@@ -81,7 +85,8 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
     if isinstance(p, PLine):
         return (
             f'<line x1="{_f(p.a[0])}" y1="{_f(p.a[1])}" x2="{_f(p.b[0])}" y2="{_f(p.b[1])}" '
-            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"/>'
+            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"'
+            f'{_dash(p.dash, p.cap)}/>'
         )
     if isinstance(p, PPolygon):
         pts = " ".join(f"{_f(x)},{_f(y)}" for x, y in p.points)
@@ -96,7 +101,7 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
     if isinstance(p, PEllipse):
         fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
         stroke = (
-            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash)}'
+            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash, p.cap)}'
             if p.stroke
             else ""
         )
@@ -107,7 +112,7 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
     if isinstance(p, PCircle):
         fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
         stroke = (
-            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash)}'
+            f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}"{_dash(p.dash, p.cap)}'
             if p.stroke
             else ""
         )

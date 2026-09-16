@@ -47,7 +47,7 @@ def drag(canvas, a, b):
 
 def test_las_herramientas_que_se_repiten_son_todas_menos_texto_y_las_de_vista():
     assert STICKY_TOOLS == {
-        Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.STEP, Tool.REDACT, Tool.LENS,
+        Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.STEP, Tool.REDACT, Tool.LENS,
     }
     assert Tool.TEXT not in STICKY_TOOLS and Tool.SELECT not in STICKY_TOOLS and Tool.CROP not in STICKY_TOOLS
 
