@@ -49,6 +49,7 @@ from core.annotate.palette import BRAND_PALETTE, PALETTE_LABELS
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
     CARD_FILL,
+    CREAM,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
@@ -109,7 +110,14 @@ HIGHLIGHT_MODE_LABELS = {
     HighlightMode.MARKER: "Marcador",
     HighlightMode.OVERLAY: "Translucido",
 }
-PRESET_LABELS = {"nota": "Nota", "exito": "Exito", "alerta": "Alerta", "libre": "Libre (con contorno)"}
+PRESET_LABELS = {
+    "nota": "Nota",
+    "nota2": "Nota 2",
+    "exito": "Exito",
+    "alerta": "Alerta",
+    "alerta2": "Alerta 2",
+    "libre": "Libre (con contorno)",
+}
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
  _PAGE_CROP, _PAGE_HIGHLIGHT) = range(9)
@@ -139,14 +147,19 @@ class _ColorRow(QWidget):
 
     changed = Signal(object)  # "#RRGGBB" o None (volver al de la paleta)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        reset_text: str = "Paleta",
+        reset_tip: str = "Volver al color de la paleta del documento",
+    ) -> None:
         super().__init__(parent)
         self._silent = False
         self._picker = ColorPickerButton("#000000")
         self._picker.colorChanged.connect(self._on_picked)
         self._reset = QToolButton()
-        self._reset.setText("Paleta")
-        self._reset.setToolTip("Volver al color de la paleta del documento")
+        self._reset.setText(reset_text)
+        self._reset.setToolTip(reset_tip)
         self._reset.clicked.connect(lambda: self.changed.emit(None))
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -199,7 +212,14 @@ class PropertiesPanel(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setWidget(self._pages)
+        # la pagina mide lo que necesita; el espacio que sobra lo absorbe un relleno (si no, el formulario
+        # reparte ese espacio entre sus filas y quedan huecos enormes)
+        holder = QWidget()
+        holder_layout = QVBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.addWidget(self._pages)
+        holder_layout.addStretch(1)
+        self._scroll.setWidget(holder)
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)
         layout.addWidget(self._scroll, stretch=1)
@@ -590,8 +610,21 @@ class PropertiesPanel(QWidget):
             lambda _i: self._apply(align=TextAlign(self._text_align.currentData()))
         )
 
+        # color de la letra: su valor de fabrica es el de marca (no hay "paleta" para el texto)
+        self._text_color = _ColorRow(reset_text="Marca", reset_tip=f"Volver al color de letra de marca ({CREAM})")
+        self._text_color.changed.connect(lambda value: self._apply_color("color", value or CREAM))
+        text_color_label = _ResetLabel("Color letra")
+        text_color_label.doubleClicked.connect(lambda: self._apply_color("color", CREAM))
+        self._text_opacity = QSpinBox()
+        self._text_opacity.setRange(0, 100)
+        self._text_opacity.setSuffix(" %")
+        self._text_opacity.setToolTip("Opacidad de toda la etiqueta (letra, fondo y borde)")
+        self._text_opacity.valueChanged.connect(lambda v: self._apply(opacity=v / 100))
+
         form.addRow(self._text_edit)
         form.addRow("Estilo", self._text_preset)
+        form.addRow(text_color_label, self._text_color)
+        self._field_row(form, "Opacidad", self._text_opacity, "opacity", 1.0)
         self._field_row(form, "Tamano", self._text_size, "size", _TEXT_DEFAULT_SIZE)
         form.addRow(self._text_bold)
         self._field_row(form, "Alineacion", self._text_align, "align", TextAlign.LEFT)
@@ -804,6 +837,9 @@ class PropertiesPanel(QWidget):
                     self._text_size.setValue(round(item.size))
                 self._text_bold.setChecked(item.bold)
                 self._set_combo(self._text_align, item.align.value)
+                self._text_color.set_value(item.color, item.color.upper() != CREAM.upper())
+                if self._text_opacity.value() != round(item.opacity * 100):
+                    self._text_opacity.setValue(round(item.opacity * 100))
             elif isinstance(item, Magnifier):
                 self._pages.setCurrentIndex(_PAGE_LENS)
                 self._title.setText("Lupa")

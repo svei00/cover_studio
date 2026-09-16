@@ -176,6 +176,7 @@ class TextLabel:
     rx: float = 8.0
     align: TextAlign = TextAlign.LEFT
     outline: str | None = None
+    opacity: float = 1.0   # de toda la etiqueta (letra, fondo y borde); el fondo ademas lleva su bg_opacity
 
 
 @dataclass(frozen=True)

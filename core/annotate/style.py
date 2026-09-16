@@ -84,6 +84,14 @@ TEXT_PRESETS: dict[str, dict] = {
     "alerta": {
         "color": CREAM, "bg": CARD_FILL, "border": RED, "border_width": 3.0, "outline": None,
     },
+    # Alerta 2: la misma forma que Alerta, en el rojo de siempre (fondo, borde y letra blanca)
+    "alerta2": {
+        "color": "#FFFFFF", "bg": "#D32F2F", "border": "#8E1B1B", "border_width": 3.0, "outline": None,
+    },
+    # Nota 2: la misma forma que Nota, con el color de una nota post-it
+    "nota2": {
+        "color": "#333333", "bg": "#FFF3A3", "border": "#E0C84A", "outline": None,
+    },
     "libre": {
         "color": CREAM, "bg": None, "border": None, "outline": PAGE_BG,
     },

@@ -34,14 +34,18 @@ from PySide6.QtWidgets import (
 )
 
 from core.geometry import (
+    MAX_SUBTITLE_BORDER,
     CanvasSize,
     CoverConfig,
     FontWeight,
     GeometryError,
     Orientation,
+    SubtitleLayout,
+    SubtitlePosition,
     VerticalPosition,
     build_svg,
     compute_band_geometry,
+    compute_subtitle_layout,
     render_png,
 )
 from core.presets import PresetError, list_presets, load_preset, save_preset
@@ -69,6 +73,12 @@ ORIENTATION_LABELS: dict[Orientation, str] = {
     Orientation.BOTTOM_LEFT: "Abajo-izquierda",
     Orientation.TOP_RIGHT: "Arriba-derecha",
     Orientation.TOP_LEFT: "Arriba-izquierda",
+}
+
+SUBTITLE_POSITION_LABELS: dict[SubtitlePosition, str] = {
+    SubtitlePosition.BOTTOM_RIGHT: "Abajo-derecha",
+    SubtitlePosition.BOTTOM_LEFT: "Abajo-izquierda",
+    SubtitlePosition.BOTTOM_CENTER: "Abajo-centro",
 }
 
 VERTICAL_LABELS: dict[VerticalPosition, str] = {
@@ -180,6 +190,14 @@ class MainWindow(QMainWindow):
         reprogramar la vista previa en vivo (con debounce)."""
         triggers = [
             self.title_edit.textChanged,
+            self.subtitle_edit.textChanged,
+            self.subtitle_position_combo.currentIndexChanged,
+            self.subtitle_text_color_picker.colorChanged,
+            self.subtitle_bg_color_picker.colorChanged,
+            self.subtitle_opacity_slider.valueChanged,
+            self.subtitle_border_color_picker.colorChanged,
+            self.subtitle_border_slider.valueChanged,
+            self.subtitle_font_slider.valueChanged,
             self.band_color_picker.colorChanged,
             self.accent_color_picker.colorChanged,
             self.text_color_picker.colorChanged,
@@ -239,6 +257,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
 
         layout.addWidget(self._build_input_group())
+        layout.addWidget(self._build_subtitle_group())
         layout.addWidget(self._build_colors_group())
         layout.addWidget(self._build_opacity_group())
         layout.addWidget(self._build_geometry_group())
@@ -260,6 +279,11 @@ class MainWindow(QMainWindow):
         self.title_edit.textChanged.connect(self._on_title_changed)
         layout.addWidget(self.title_edit)
 
+        layout.addWidget(QLabel("Subtitulo (opcional)"))
+        self.subtitle_edit = QLineEdit()
+        self.subtitle_edit.setPlaceholderText("Vacio = sin subtitulo")
+        layout.addWidget(self.subtitle_edit)
+
         photo_row = QWidget()
         photo_layout = QHBoxLayout(photo_row)
         photo_layout.setContentsMargins(0, 0, 0, 0)
@@ -277,6 +301,48 @@ class MainWindow(QMainWindow):
         self.output_edit = QLineEdit()
         self.output_edit.textEdited.connect(self._on_output_manually_edited)
         layout.addWidget(self.output_edit)
+
+        return box
+
+    def _build_subtitle_group(self) -> QWidget:
+        """Estilo de la franja del subtitulo (el texto se escribe en 'Contenido')."""
+        box, layout = _make_collapsible_group("Subtitulo")
+
+        self.subtitle_position_combo = QComboBox()
+        for position, label in SUBTITLE_POSITION_LABELS.items():
+            self.subtitle_position_combo.addItem(label, position)
+        self.subtitle_position_combo.currentIndexChanged.connect(self._on_subtitle_position_changed)
+        layout.addWidget(_row("Posicion", self.subtitle_position_combo))
+
+        self.subtitle_text_color_picker = ColorPickerButton(self.config.subtitle_text_color)
+        self.subtitle_text_color_picker.colorChanged.connect(self._on_subtitle_text_color_changed)
+        layout.addWidget(_row("Color del texto", self.subtitle_text_color_picker))
+
+        self.subtitle_bg_color_picker = ColorPickerButton(self.config.subtitle_bg_color)
+        self.subtitle_bg_color_picker.colorChanged.connect(self._on_subtitle_bg_color_changed)
+        layout.addWidget(_row("Color de fondo", self.subtitle_bg_color_picker))
+
+        self.subtitle_opacity_slider = SliderSpinBox(
+            0, 100, round(self.config.subtitle_bg_opacity * 100), suffix="%"
+        )
+        self.subtitle_opacity_slider.setToolTip("Solo del relleno de la franja: el texto y el borde van al 100 %")
+        self.subtitle_opacity_slider.valueChanged.connect(self._on_subtitle_opacity_changed)
+        layout.addWidget(_row("Opacidad del fondo", self.subtitle_opacity_slider))
+
+        self.subtitle_border_color_picker = ColorPickerButton(self.config.subtitle_border_color)
+        self.subtitle_border_color_picker.colorChanged.connect(self._on_subtitle_border_color_changed)
+        layout.addWidget(_row("Color del borde", self.subtitle_border_color_picker))
+
+        self.subtitle_border_slider = SliderSpinBox(
+            0, MAX_SUBTITLE_BORDER, self.config.subtitle_border_width, step=0.5, suffix=" px", scale=10
+        )
+        self.subtitle_border_slider.setToolTip("0 = sin borde")
+        self.subtitle_border_slider.valueChanged.connect(self._on_subtitle_border_width_changed)
+        layout.addWidget(_row("Grosor del contorno", self.subtitle_border_slider))
+
+        self.subtitle_font_slider = SliderSpinBox(12, 120, self.config.subtitle_font_size, suffix=" px")
+        self.subtitle_font_slider.valueChanged.connect(self._on_subtitle_font_size_changed)
+        layout.addWidget(_row("Tamano de letra", self.subtitle_font_slider))
 
         return box
 
@@ -543,6 +609,14 @@ class MainWindow(QMainWindow):
         self.canvas_height_spin.setValue(config.canvas.height)
         self.custom_canvas_row.setVisible(matching_label == "Personalizado")
 
+        self._select_combo_data(self.subtitle_position_combo, config.subtitle_position)
+        self.subtitle_text_color_picker.set_hex_color(config.subtitle_text_color)
+        self.subtitle_bg_color_picker.set_hex_color(config.subtitle_bg_color)
+        self.subtitle_opacity_slider.set_value(round(config.subtitle_bg_opacity * 100))
+        self.subtitle_border_color_picker.set_hex_color(config.subtitle_border_color)
+        self.subtitle_border_slider.set_value(config.subtitle_border_width)
+        self.subtitle_font_slider.set_value(config.subtitle_font_size)
+
         self.save_svg_checkbox.setChecked(config.save_svg_alongside)
         self.config = config
 
@@ -585,6 +659,35 @@ class MainWindow(QMainWindow):
         slug = _slugify_for_filename(title_text) if title_text else "cover"
         candidate = self.photo_path.parent / f"{slug}-cover.png"
         self.output_edit.setText(str(candidate))
+
+    # ------------------------------------------------------------------
+    # Handlers: subtitulo
+    # ------------------------------------------------------------------
+
+    def _on_subtitle_position_changed(self, _index: int) -> None:
+        self.config.subtitle_position = SubtitlePosition(self.subtitle_position_combo.currentData())
+
+    def _on_subtitle_text_color_changed(self, hex_color: str) -> None:
+        self.config.subtitle_text_color = hex_color
+
+    def _on_subtitle_bg_color_changed(self, hex_color: str) -> None:
+        self.config.subtitle_bg_color = hex_color
+
+    def _on_subtitle_opacity_changed(self, value: float) -> None:
+        self.config.subtitle_bg_opacity = value / 100.0
+
+    def _on_subtitle_border_color_changed(self, hex_color: str) -> None:
+        self.config.subtitle_border_color = hex_color
+
+    def _on_subtitle_border_width_changed(self, value: float) -> None:
+        self.config.subtitle_border_width = value
+
+    def _on_subtitle_font_size_changed(self, value: float) -> None:
+        self.config.subtitle_font_size = value
+
+    def _build_subtitle_layout(self) -> SubtitleLayout | None:
+        """Franja del subtitulo con el texto escrito (None si esta vacio), medida con la misma fuente del titulo."""
+        return compute_subtitle_layout(self.config, self.subtitle_edit.text(), self._make_measure_fn())
 
     # ------------------------------------------------------------------
     # Handlers: colores
@@ -829,7 +932,9 @@ class MainWindow(QMainWindow):
             auto_fit=self.config.auto_fit_font,
             min_font_size=24.0,
         )
-        self.preview_widget.request_render(self.config, wrap_result.lines, wrap_result.font_size, self.photo_path)
+        self.preview_widget.request_render(
+            self.config, wrap_result.lines, wrap_result.font_size, self.photo_path, self._build_subtitle_layout()
+        )
 
     def _on_preview_render_failed(self, message: str) -> None:
         self.statusBar().showMessage(f"No se pudo actualizar la vista previa: {message}")
@@ -915,6 +1020,7 @@ class MainWindow(QMainWindow):
                 lines=wrap_result.lines,
                 font_size=wrap_result.font_size,
                 photo_path=self.photo_path,
+                subtitle=self._build_subtitle_layout(),
             )
         except GeometryError as exc:
             QMessageBox.critical(self, "No se pudo generar la portada", str(exc))

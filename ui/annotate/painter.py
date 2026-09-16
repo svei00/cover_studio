@@ -54,10 +54,13 @@ def _paint_text(painter: QPainter, p: PText) -> None:
     baseline = p.pos[1] + (metrics.ascent() - metrics.descent()) / 2
     path = QPainterPath()
     path.addText(x, baseline, font, p.text)
+    painter.save()
+    painter.setOpacity(painter.opacity() * min(max(p.opacity, 0.0), 1.0))
     if p.outline:
         outline = QPen(_color(p.outline), p.outline_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         painter.strokePath(path, outline)
     painter.fillPath(path, _brush(p.color))
+    painter.restore()
 
 
 def _paint_image(painter: QPainter, p: PImage, images: Mapping[str, QImage]) -> None:

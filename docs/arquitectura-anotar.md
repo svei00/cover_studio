@@ -456,3 +456,38 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Panel: secciones (Marco del lente, Zona de origen, Conector, Resplandor) con color, grosor y estilo, todos con
   restablecer; sin conector se ocultan los controles del conector. El panel ahora esta en un `QScrollArea` y las
   paginas que no se ven no cuentan para su alto (`_fit_page_size`).
+
+### Texto: color de la letra, opacidad y estilos "Alerta 2" / "Nota 2"
+
+- `TextLabel.opacity` (0 a 1, 1 por defecto) atenua TODA la etiqueta: letra, fondo y borde. El fondo ademas
+  conserva su `bg_opacity` propio (queda `bg_opacity * opacity`). `PText.opacity` es nuevo; el SVG escribe
+  `opacity="..."` en el `<text>` solo si es menor a 1 (al 100 % el SVG es identico al de siempre) y en una letra
+  con contorno atenua letra y contorno juntos. El pintor de Qt usa `setOpacity`. Un JSON viejo sin la clave abre
+  al 100 %; un valor invalido tambien.
+- El panel de texto suma "Color letra" (valor de fabrica `#F1EBDF`; boton "Marca" y doble clic en la etiqueta
+  lo restablecen) y "Opacidad" (0 a 100 %, con restablecer). `_ColorRow` acepta ahora el texto y el tooltip de su
+  boton de restablecer.
+- `TEXT_PRESETS` suma `alerta2` (fondo `#D32F2F`, borde `#8E1B1B`, letra blanca, mismo borde de 3 px que Alerta)
+  y `nota2` (fondo `#FFF3A3`, borde `#E0C84A`, letra `#333333`, mismo borde que Nota). Los presets solo fijan
+  colores: tamano, alineacion, negrita y opacidad se conservan al elegirlos. Aparecen en el combo "Estilo" junto
+  a Nota y Alerta (`PRESET_LABELS`). Las originales no cambiaron.
+- Error corregido de paso: al envolver el panel en un `QScrollArea` la pagina se estiraba y el formulario
+  repartia el espacio sobrante entre sus filas; ahora la pagina va en un contenedor con relleno debajo.
+
+## Portada: subtitulo
+
+- `CoverConfig` suma `subtitle_position` (abajo-derecha, abajo-izquierda, abajo-centro), `subtitle_text_color`
+  (`#F1EBDF`), `subtitle_bg_color` (`#1B3350`), `subtitle_bg_opacity` (0.90), `subtitle_border_color` (`#2F80D6`),
+  `subtitle_border_width` (2 px, 0 a 12) y `subtitle_font_size` (36). Van en los presets (`config_to_dict`); un
+  preset viejo abre con estos valores, y una posicion desconocida usa la de siempre. El TEXTO del subtitulo no
+  es parte del preset (igual que el titulo).
+- `geometry.compute_subtitle_layout(config, texto, measure)` devuelve la franja ya resuelta (`SubtitleLayout`)
+  o None si el texto esta vacio. Reutiliza `wrap_title` (la misma logica del titulo: parte en dos lineas y, si
+  aun asi no cabe, achica la letra) y `layout_text_lines`; ultimo recurso: achica proporcionalmente. El margen al
+  borde es 24 px a 1584 px de ancho y escala con el lienzo. El texto se respeta tal cual (no pasa por
+  `normalize_title`). Nunca se sale del lienzo (hay un test con textos absurdos en cada posicion).
+- `build_svg(..., subtitle=layout)` agrega UN solo `<rect>` redondeado (sin acento en L ni sombra) y el texto,
+  encima del titulo. La opacidad es solo del `fill-opacity`; el borde y el texto van al 100 %. El borde se
+  dibuja HACIA ADENTRO de la caja, asi el tamano y la posicion de la franja no cambian con el grosor.
+- La vista previa (`PreviewWidget.request_render(..., subtitle)`) y la exportacion usan el mismo `build_svg` y
+  el mismo rasterizador (`resvg`; el proyecto no usa cairosvg): hay un test de que dan los mismos bytes.

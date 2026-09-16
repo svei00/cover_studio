@@ -117,6 +117,7 @@ class PText:
     anchor: str = "middle"
     outline: str | None = None
     outline_width: float = 0.0
+    opacity: float = 1.0
 
 
 Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage
@@ -264,9 +265,10 @@ def text_label_primitives(t: TextLabel, scale: float) -> list[Primitive]:
                 box,
                 stroke=t.border,
                 width=t.border_width * scale if t.border else 0.0,
+                opacity=t.opacity,
                 rx=t.rx * scale,
                 fill=t.bg,
-                fill_opacity=t.bg_opacity,
+                fill_opacity=t.bg_opacity * t.opacity,
             )
         )
     outline_w = max(2.0, size * 0.12) if t.outline else 0.0
@@ -278,7 +280,7 @@ def text_label_primitives(t: TextLabel, scale: float) -> list[Primitive]:
             pos, anchor = (box.x + box.w / 2, cy), "middle"
         else:
             pos, anchor = (box.x + pad, cy), "start"
-        out.append(PText(pos, line, size, t.color, t.bold, anchor, t.outline, outline_w))
+        out.append(PText(pos, line, size, t.color, t.bold, anchor, t.outline, outline_w, t.opacity))
     return out
 
 

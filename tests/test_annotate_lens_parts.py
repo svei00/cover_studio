@@ -271,7 +271,7 @@ def test_cada_cambio_es_un_paso_de_deshacer_y_los_de_otros_campos_no_se_mezclan(
 
 def test_el_panel_tiene_scroll_y_las_paginas_no_estiran_a_las_demas(tab):
     p = tab.panel
-    assert p._scroll.widget() is p._pages
+    assert p._scroll.widget().layout().itemAt(0).widget() is p._pages
     altura_lupa = p._pages.sizeHint().height()
     tab.controller.select(None)
     QApplication.processEvents()

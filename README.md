@@ -19,7 +19,11 @@ python -m venv .venv
 .venv\Scripts\python main.py
 ```
 
-1. Escribe el titulo y arrastra (o busca con "Examinar...") la foto de fondo.
+1. Escribe el titulo y arrastra (o busca con "Examinar...") la foto de fondo. Si quieres, escribe
+   tambien un **subtitulo**: una franja redondeada abajo (derecha, izquierda o centro) que se ajusta
+   al texto y se configura en el grupo "Subtitulo" (color del texto, color y opacidad del fondo,
+   color y grosor del borde, tamano de letra). La opacidad es solo del relleno; el texto y el borde
+   van al 100 %, y con grosor 0 no hay borde. Vacio = no se dibuja nada.
 2. Ajusta colores, geometria, tipografia y lienzo en el panel izquierdo. La
    vista previa de la derecha se actualiza sola medio segundo despues de
    cada cambio.
@@ -42,7 +46,8 @@ Anota capturas de pantalla con la identidad visual de Excel Solutions.
    las pegadas se guardan en la carpeta Imágenes, subcarpeta Cover Studio).
 2. Elige una herramienta y dibuja sobre la captura: **Marcador** (recuadro con
    resplandor dorado y flecha), **Flecha**, **Paso** (círculo numerado), **Texto**
-   (etiqueta con presets de marca), **Pixelar** (para anonimizar RFC, nombres, UUID)
+   (etiqueta con estilos Nota, Nota 2 post-it, Exito, Alerta, Alerta 2 roja y Libre; con color de letra
+   y opacidad), **Pixelar** (para anonimizar RFC, nombres, UUID)
    y **Lupa** (amplía una zona en un lente aparte: circular, ovalada, o rectangular con
    esquinas ajustables). Hay **Marcador** (con flecha) y **Recuadro** (sin flecha).
 3. **Seleccionar** mueve y redimensiona; `Suprimir` borra; `CTRL + Z` / `CTRL + Y`

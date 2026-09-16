@@ -164,7 +164,7 @@ def item_to_dict(item: Annotation) -> dict:
                 "size": item.size, "color": item.color, "bold": item.bold, "bg": item.bg,
                 "bg_opacity": item.bg_opacity, "border": item.border,
                 "border_width": item.border_width, "padding": item.padding, "rx": item.rx,
-                "align": item.align.value, "outline": item.outline}
+                "align": item.align.value, "outline": item.outline, "opacity": item.opacity}
     if isinstance(item, Redaction):
         return {"type": "redaction", "id": item.id, "rect": _rect_to_list(item.rect), "block": item.block}
     if isinstance(item, Magnifier):
@@ -217,6 +217,7 @@ def item_from_dict(data: dict) -> Annotation:
                 color=data["color"], bold=data["bold"], bg=data["bg"], bg_opacity=data["bg_opacity"],
                 border=data["border"], border_width=data["border_width"], padding=data["padding"],
                 rx=data["rx"], align=TextAlign(data["align"]), outline=data["outline"],
+                opacity=_number_or_default(data.get("opacity"), 0.0, 1.0, 1.0),
             )
         if kind == "redaction":
             return Redaction(data["id"], Rect(*data["rect"]), data["block"])

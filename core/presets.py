@@ -7,7 +7,7 @@ import json
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from core.geometry import CanvasSize, CoverConfig, FontWeight, Orientation, VerticalPosition
+from core.geometry import CanvasSize, CoverConfig, FontWeight, Orientation, SubtitlePosition, VerticalPosition
 
 
 class PresetError(Exception):
@@ -21,6 +21,7 @@ def config_to_dict(config: CoverConfig) -> dict:
     data["orientation"] = config.orientation.value
     data["vertical_position"] = config.vertical_position.value
     data["font_weight"] = config.font_weight.value
+    data["subtitle_position"] = config.subtitle_position.value
     return data
 
 
@@ -40,6 +41,11 @@ def config_from_dict(data: dict) -> CoverConfig:
         kwargs["vertical_position"] = VerticalPosition(kwargs["vertical_position"])
     if "font_weight" in kwargs:
         kwargs["font_weight"] = FontWeight(kwargs["font_weight"])
+    if "subtitle_position" in kwargs:
+        try:
+            kwargs["subtitle_position"] = SubtitlePosition(kwargs["subtitle_position"])
+        except ValueError:   # un valor desconocido usa el de siempre (abajo-derecha)
+            del kwargs["subtitle_position"]
 
     return CoverConfig(canvas=canvas, **kwargs)
 

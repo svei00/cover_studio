@@ -1,4 +1,4 @@
-"""Construccion del SVG de la portada: banda, acento en L y titulo. Logica
+"""Construccion del SVG de la portada: banda, acento en L, titulo y subtitulo. Logica
 pura, sin Qt, para poder testear y reusar desde CLI o UI."""
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from pathlib import Path
 
 import resvg_py
 from PIL import Image, UnidentifiedImageError
+
+from core.text_utils import MeasureFn, wrap_title
 
 SUPPORTED_PHOTO_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 _MIME_BY_SUFFIX = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp"}
@@ -31,6 +33,12 @@ class VerticalPosition(str, Enum):
     TOP = "top"
     CENTER = "center"
     BOTTOM = "bottom"
+
+
+class SubtitlePosition(str, Enum):
+    BOTTOM_RIGHT = "bottom-right"
+    BOTTOM_LEFT = "bottom-left"
+    BOTTOM_CENTER = "bottom-center"
 
 
 class FontWeight(str, Enum):
@@ -90,6 +98,83 @@ class CoverConfig:
     auto_fit_font: bool = True
     max_lines: int = 2
     save_svg_alongside: bool = False
+    # Subtitulo: una franja redondeada simple (sin capa doble ni sombra), opcional. Su texto no es parte
+    # de la configuracion (como el titulo); si esta vacio no se dibuja nada.
+    subtitle_position: SubtitlePosition = SubtitlePosition.BOTTOM_RIGHT
+    subtitle_text_color: str = "#F1EBDF"
+    subtitle_bg_color: str = "#1B3350"
+    subtitle_bg_opacity: float = 0.90        # solo del relleno: el texto y el borde van al 100 %
+    subtitle_border_color: str = "#2F80D6"
+    subtitle_border_width: float = 2.0       # px; 0 = sin borde
+    subtitle_font_size: float = 36.0
+
+
+# Subtitulo: las medidas que dependen del lienzo se dan para un ancho de 1584 px y escalan con el ancho real.
+SUBTITLE_REFERENCE_WIDTH = 1584.0
+SUBTITLE_MARGIN = 24.0          # distancia de la franja al borde del lienzo, a 1584 px de ancho
+SUBTITLE_PAD_X = 0.9            # relleno interno, en multiplos del tamano de letra
+SUBTITLE_PAD_Y = 0.5
+SUBTITLE_LINE_HEIGHT = 1.2
+SUBTITLE_RADIUS = 0.4           # esquinas de la franja, en multiplos del tamano de letra
+SUBTITLE_MAX_LINES = 2
+SUBTITLE_MIN_FONT = 10.0
+MAX_SUBTITLE_BORDER = 12.0
+
+
+@dataclass(frozen=True)
+class SubtitleLayout:
+    """Subtitulo ya resuelto: lineas, tamano de letra y rectangulo (en px del lienzo) de la franja."""
+
+    lines: tuple[str, ...]
+    font_size: float
+    rect: BandGeometry
+    radius: float
+
+
+def compute_subtitle_layout(config: CoverConfig, text: str, measure: MeasureFn) -> SubtitleLayout | None:
+    """Franja del subtitulo, o None si el texto esta vacio. El texto se respeta tal como se escribio
+    (no se normaliza ni se cambia a mayusculas). El ancho se ajusta al texto mas el relleno; si no cabe en
+    el lienzo (menos los margenes) se parte en dos lineas y, si aun asi no cabe, se achica la letra. Nunca
+    se sale del lienzo. `measure` es la misma MeasureFn que usa el titulo."""
+    words = text.split()
+    if not words:
+        return None
+    text = " ".join(words)
+    canvas = config.canvas
+    margin = SUBTITLE_MARGIN * canvas.width / SUBTITLE_REFERENCE_WIDTH
+    initial = max(1.0, config.subtitle_font_size)
+    max_width = max(1.0, canvas.width - 2 * margin - 2 * SUBTITLE_PAD_X * initial)
+
+    result = wrap_title(
+        text, measure, max_width, initial,
+        max_lines=SUBTITLE_MAX_LINES, auto_fit=True, min_font_size=min(SUBTITLE_MIN_FONT, initial),
+    )
+    lines, font_size = result.lines, result.font_size
+
+    # ultimo recurso (una palabra enorme que ni a la letra minima cabe): se achica proporcionalmente
+    for _ in range(4):
+        pad_x = SUBTITLE_PAD_X * font_size
+        room = max(1.0, canvas.width - 2 * margin - 2 * pad_x)
+        widest = max(measure(line, font_size) for line in lines)
+        if widest <= room:
+            break
+        font_size = max(1.0, font_size * room / widest * 0.995)
+
+    pad_x, pad_y = SUBTITLE_PAD_X * font_size, SUBTITLE_PAD_Y * font_size
+    width = max(measure(line, font_size) for line in lines) + 2 * pad_x
+    height = len(lines) * SUBTITLE_LINE_HEIGHT * font_size + 2 * pad_y
+    width = min(width, canvas.width - 2 * margin)
+    if config.subtitle_position is SubtitlePosition.BOTTOM_LEFT:
+        x = margin
+    elif config.subtitle_position is SubtitlePosition.BOTTOM_CENTER:
+        x = (canvas.width - width) / 2
+    else:
+        x = canvas.width - margin - width
+    y = canvas.height - margin - height
+    x = min(max(0.0, x), max(0.0, canvas.width - width))   # nunca fuera del lienzo
+    y = min(max(0.0, y), max(0.0, canvas.height - height))
+    radius = min(height / 2, SUBTITLE_RADIUS * font_size)
+    return SubtitleLayout(tuple(lines), font_size, BandGeometry(x, y, width, height), radius)
 
 
 def compute_band_geometry(config: CoverConfig) -> BandGeometry:
@@ -250,9 +335,10 @@ def build_svg(
     lines: Sequence[str],
     font_size: float,
     photo_path: Path | None = None,
+    subtitle: SubtitleLayout | None = None,
 ) -> str:
     """Ensambla el documento SVG completo: fondo (foto o marcador neutro),
-    acento azul, banda verde y titulo, en ese orden de dibujo."""
+    acento azul, banda verde, titulo y subtitulo (si hay), en ese orden de dibujo."""
     band = compute_band_geometry(config)
     band_opacity, accent_opacity = _resolve_opacities(config)
     canvas = config.canvas
@@ -303,8 +389,36 @@ def build_svg(
             f'{escape_xml(line)}</text>'
         )
 
+    if subtitle is not None:
+        svg.extend(_subtitle_svg(config, subtitle))
+
     svg.append('</svg>')
     return "\n".join(svg)
+
+
+def _subtitle_svg(config: CoverConfig, subtitle: SubtitleLayout) -> list[str]:
+    """Franja redondeada del subtitulo y su texto. UN solo rectangulo (sin capa doble ni sombra). La opacidad
+    es solo del relleno; el borde y el texto se dibujan al 100 %. El borde se dibuja hacia adentro de la caja
+    (el trazo es centrado), asi el tamano total y el margen al borde del lienzo no cambian con el grosor."""
+    rect = subtitle.rect
+    border = min(max(config.subtitle_border_width, 0.0), MAX_SUBTITLE_BORDER)
+    opacity = min(max(config.subtitle_bg_opacity, 0.0), 1.0)
+    inset = border / 2
+    rx = max(0.0, subtitle.radius - inset)
+    stroke = f' stroke="{config.subtitle_border_color}" stroke-width="{border:.2f}"' if border > 0 else ""
+    parts = [
+        f'<rect x="{rect.x + inset:.2f}" y="{rect.y + inset:.2f}" width="{rect.width - border:.2f}" '
+        f'height="{rect.height - border:.2f}" rx="{rx:.2f}" fill="{config.subtitle_bg_color}" '
+        f'fill-opacity="{opacity:.2f}"{stroke}/>'
+    ]
+    weight_css = _FONT_WEIGHT_CSS[config.font_weight]
+    for line, x, y in layout_text_lines(subtitle.lines, rect, subtitle.font_size, SUBTITLE_LINE_HEIGHT):
+        parts.append(
+            f'<text x="{x:.2f}" y="{y:.2f}" text-anchor="middle" dominant-baseline="central" '
+            f'font-family="{escape_xml(config.font_family)}" font-size="{subtitle.font_size:.2f}" '
+            f'font-weight="{weight_css}" fill="{config.subtitle_text_color}">{escape_xml(line)}</text>'
+        )
+    return parts
 
 
 def render_png_bytes(svg_text: str, width: int, height: int) -> bytes:

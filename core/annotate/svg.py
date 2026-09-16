@@ -124,11 +124,12 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
             if p.outline
             else ""
         )
+        opacity = f' opacity="{min(max(p.opacity, 0.0), 1.0):.2f}"' if p.opacity < 1.0 else ""   # de toda la letra
         return (
             f'<text x="{_f(p.pos[0])}" y="{_f(p.pos[1])}" text-anchor="{p.anchor}" '
             f'dominant-baseline="central" font-family="{escape_xml(style.FONT)}" '
             f'font-size="{_f(p.size)}" font-weight="{"700" if p.bold else "400"}" '
-            f'fill="{p.color}"{outline}>{escape_xml(p.text)}</text>'
+            f'fill="{p.color}"{outline}{opacity}>{escape_xml(p.text)}</text>'
         )
     raise TypeError(f"Primitiva desconocida: {type(p).__name__}")
 

@@ -14,6 +14,7 @@ from core.geometry import (
     CanvasSize,
     CoverConfig,
     GeometryError,
+    SubtitleLayout,
     build_svg,
     compute_band_geometry,
     render_png_bytes,
@@ -37,6 +38,7 @@ class _RenderTask(QRunnable):
         font_size: float,
         photo_path: Path | None,
         preview_width: int,
+        subtitle: SubtitleLayout | None = None,
     ) -> None:
         super().__init__()
         self.signals = _RenderSignals()
@@ -45,12 +47,13 @@ class _RenderTask(QRunnable):
         self._font_size = font_size
         self._photo_path = photo_path
         self._preview_width = preview_width
+        self._subtitle = subtitle
 
     def run(self) -> None:
         try:
             scale = self._preview_width / self._config.canvas.width
             preview_height = max(1, round(self._config.canvas.height * scale))
-            svg_text = build_svg(self._config, self._lines, self._font_size, self._photo_path)
+            svg_text = build_svg(self._config, self._lines, self._font_size, self._photo_path, self._subtitle)
             png_bytes = render_png_bytes(svg_text, self._preview_width, preview_height)
         except GeometryError as exc:
             self.signals.failed.emit(str(exc))
@@ -98,11 +101,14 @@ class PreviewWidget(QLabel):
         lines: list[str],
         font_size: float,
         photo_path: Path | None,
+        subtitle: SubtitleLayout | None = None,
     ) -> None:
         """Encola un render. Si ya hay uno corriendo, este pedido reemplaza
         al pendiente anterior (solo interesa el mas reciente)."""
         self._canvas_size = config.canvas
-        request = {"config": config, "lines": lines, "font_size": font_size, "photo_path": photo_path}
+        request = {
+            "config": config, "lines": lines, "font_size": font_size, "photo_path": photo_path, "subtitle": subtitle,
+        }
         if self._render_in_flight:
             self._pending_request = request
             return
@@ -111,7 +117,8 @@ class PreviewWidget(QLabel):
     def _start_render(self, request: dict) -> None:
         self._render_in_flight = True
         task = _RenderTask(
-            request["config"], request["lines"], request["font_size"], request["photo_path"], self.PREVIEW_WIDTH
+            request["config"], request["lines"], request["font_size"], request["photo_path"], self.PREVIEW_WIDTH,
+            request["subtitle"],
         )
         task.signals.finished.connect(self._on_render_finished)
         task.signals.failed.connect(self._on_render_failed)
