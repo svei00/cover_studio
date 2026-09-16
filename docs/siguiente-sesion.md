@@ -6,7 +6,7 @@ sin repetir descubrimientos ni preguntar lo que ya se decidio.
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **539 tests pasan.**
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **564 tests pasan.**
 
 - **Pestana "Portada"**: genera portadas 16:9 (foto + banda + titulo + acento en L), vista previa en
   vivo con hilo y debounce, arrastre de la banda, presets, guarda anti-sobrescritura.
@@ -67,7 +67,7 @@ Para "me pase de largo / necesito algo mas pequeno".
 - Valora reutilizar la fila de muestras en los demas selectores de color (`ui/widgets.py`
   `ColorPickerButton`).
 
-### 3.3 Zoom y desplazamiento del lienzo
+### 3.3 Zoom y desplazamiento del lienzo — HECHO (ver `arquitectura-anotar.md`)
 Hoy la captura se ajusta a la ventana (maximo 2x) y no hay zoom: con capturas 4K se coloca con poca
 precision.
 - Rueda = zoom hacia el cursor; arrastrar con boton central (o espacio + arrastrar) = desplazar;

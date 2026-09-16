@@ -74,11 +74,11 @@ def test_view_es_la_imagen_completa_o_el_recorte():
     assert doc.view == Rect(10, 20, 100, 80)
 
 
-def test_la_escala_automatica_usa_el_ancho_del_recorte():
+def test_la_escala_automatica_no_cambia_al_recortar():
     doc = AnnotationDoc(Path("x.png"), (3200, 1800))
     assert doc_scale(doc) == 2.0
     doc.crop = Rect(0, 0, 1600, 900)
-    assert doc_scale(doc) == 1.0
+    assert doc_scale(doc) == 2.0   # el recorte es una ventana: las anotaciones se ven igual
     doc.style_scale = 3.0   # la manual manda
     assert doc_scale(doc) == 3.0
 

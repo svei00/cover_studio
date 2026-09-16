@@ -167,6 +167,14 @@ def _marker_arrow_points(rect: Rect, side: ArrowSide, scale: float) -> tuple[Poi
     raise ValueError(f"Lado de flecha no resuelto: {side}")
 
 
+def marker_arrow(m: Marker, doc: AnnotationDoc, scale: float) -> tuple[Point, Point] | None:
+    """(inicio, punta) de la flecha del marcador tal como se dibuja, o None si no lleva."""
+    side = resolve_arrow_side(m, doc.image_size, doc.items, scale, doc.view)
+    if side is ArrowSide.NONE:
+        return None
+    return _marker_arrow_points(m.rect, side, scale)
+
+
 def _arrow_box(rect: Rect, side: ArrowSide, scale: float) -> Rect:
     start, tip = _marker_arrow_points(rect, side, scale)
     x0, x1 = sorted((start[0], tip[0]))
@@ -371,9 +379,9 @@ def resolve_arrow_side(
 
 
 def doc_scale(doc: AnnotationDoc) -> float:
-    """Escala de los trazos: la manual, o la automatica segun el ancho de lo que se
-    exporta (el recorte, si lo hay)."""
-    return doc.style_scale if doc.style_scale else style.auto_scale(doc.view.w)
+    """Escala de los trazos: la manual, o la automatica segun el ancho de la IMAGEN completa.
+    Recortar no la cambia: el recorte es una ventana y las anotaciones se ven igual."""
+    return doc.style_scale if doc.style_scale else style.auto_scale(doc.image_size[0])
 
 
 def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[Primitive]:

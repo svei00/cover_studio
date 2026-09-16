@@ -318,7 +318,8 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   asas y `resize_crop`.
 - Export (`svg.py`): lienzo = `view` + margen, contenido trasladado por `-crop`. Al SVG solo viaja el bitmap
   recortado (los pixeles de fuera no quedan en el archivo). Pixelados y lupas leen el bitmap COMPLETO.
-- `doc_scale` automatico usa el ancho del recorte (decision revisable: ver nota en siguiente-sesion).
+- `doc_scale` automatico usa el ancho de la IMAGEN completa, no el del recorte: recortar es una ventana y las
+  anotaciones se ven igual (decidido con Svei tras ver que con el ancho del recorte se adelgazaban).
 - Margen: `required_padding` mide contra `view`; lo que queda del todo fuera del recorte no pide margen y
   `bounds.items_outside_view` lo cuenta para avisar en el panel. Colocacion automatica de flecha y lupa usan
   `view` como region.
@@ -362,3 +363,26 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Se dibuja en el orden de la lista como cualquier anotacion (no es del bitmap): las lupas muestran la imagen
   SIN resaltar. No cuenta como obstaculo para las flechas ni la lupa (`item_bounds` = None).
 - `ui/widgets.py::ColorSwatchRow`: fila de muestras reutilizable (aun solo la usa el resaltador).
+
+### Seleccion: interior y flecha del marcador
+
+- Bug reportado por Svei ("seleccionar no funciona"): un clic DENTRO de un marcador o sobre su flecha no
+  seleccionaba nada (solo respondia el borde del recuadro). Ahora `edit.hit_test` acepta `arrows` (id de
+  marcador -> (inicio, punta), calculado por `primitives.marker_arrow` / `controller.marker_arrows()`) y hace
+  dos pasadas: primero lo que esta bajo el punto (borde, flecha, y todo lo demas); si no hay nada, el
+  interior de un marcador. Asi lo que esta DENTRO de un marcador (un paso, un texto) sigue seleccionable.
+
+### Zoom y desplazamiento del lienzo (solo de vista)
+
+- `AnnotateCanvas` guarda `_zoom` (None = "Ajustar", tope 2x como siempre) y `_center`: el PUNTO DE LA IMAGEN
+  que queda en el centro de la ventana (no un offset en pixeles). Asi un cambio de tamano de la ventana, de
+  margen o de recorte (la herramienta Recortar muestra la imagen completa) no mueve lo que se mira.
+  `view_layout()` sigue siendo el unico lugar que convierte pantalla <-> imagen; hit-test, asas, tolerancia y
+  seleccion lo heredan sin cambios.
+- Rueda = zoom hacia el cursor (el punto bajo el cursor no se mueve; x1.2 por clic, tope 32x, nunca baja del
+  ajuste y a menos de 1 % del ajuste vuelve al modo ajustado). Boton central o Espacio + arrastrar = mover
+  (el touchpad horizontal tambien). `_clamp_center`: si la imagen cabe se centra; si no, su borde nunca se
+  separa mas de 12 px del borde de la ventana (no se puede "perder" la imagen ni dejar huecos grandes).
+- Barra bajo el lienzo: Ajustar (CTRL + 0), 100 % (CTRL + 1), etiqueta de zoom; CTRL + / CTRL - acercan y
+  alejan. Con escala > 2x se pintan los pixeles sin suavizar, para ubicar con precision.
+- Cambiar de captura reinicia la vista a "Ajustar". El export no depende del zoom (hay un test con hash).

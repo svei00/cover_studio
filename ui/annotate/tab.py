@@ -34,7 +34,7 @@ from core.annotate.primitives import build_primitives
 from core.annotate.raster import apply_redactions, lens_crops, load_image
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
-from ui.annotate.canvas import AnnotateCanvas
+from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
 from ui.annotate.controller import EditController, Tool
 from ui.annotate.panel import PropertiesPanel
 from ui.dialogs import OverwriteConfirmDialog
@@ -146,8 +146,29 @@ class AnnotateTab(QWidget):
             tools.addWidget(widget)
         tools.addStretch(1)
 
+        self.fit_btn = QToolButton()
+        self.fit_btn.setText("Ajustar")
+        self.fit_btn.setToolTip("Ajusta la captura a la ventana (CTRL + 0)")
+        self.fit_btn.clicked.connect(self.canvas.fit)
+        self.actual_btn = QToolButton()
+        self.actual_btn.setText("100 %")
+        self.actual_btn.setToolTip("Un pixel de la captura por pixel de pantalla (CTRL + 1)")
+        self.actual_btn.clicked.connect(self.canvas.actual_size)
+        self.zoom_label = QLabel("Zoom: -")
+        zoom_hint = QLabel("Rueda: zoom - Boton central o Espacio + arrastrar: mover")
+        zoom_hint.setStyleSheet("color: #888888;")
+        zoom_row = QHBoxLayout()
+        for widget in (self.fit_btn, self.actual_btn, self.zoom_label):
+            zoom_row.addWidget(widget)
+        zoom_row.addStretch(1)
+        zoom_row.addWidget(zoom_hint)
+        self.canvas.zoomChanged.connect(self._on_zoom_changed)
+
+        canvas_column = QVBoxLayout()
+        canvas_column.addWidget(self.canvas, stretch=1)
+        canvas_column.addLayout(zoom_row)
         body = QHBoxLayout()
-        body.addWidget(self.canvas, stretch=1)
+        body.addLayout(canvas_column, stretch=1)
         body.addWidget(self.panel)
 
         layout = QVBoxLayout(self)
@@ -166,10 +187,18 @@ class AnnotateTab(QWidget):
                           (QKeySequence.StandardKey.Undo, self.controller.undo),
                           (QKeySequence.StandardKey.Redo, self.controller.redo),
                           (QKeySequence.StandardKey.Save, self.save_project),
-                          (QKeySequence.StandardKey.Copy, self.copy_to_clipboard)):
+                          (QKeySequence.StandardKey.Copy, self.copy_to_clipboard),
+                          (QKeySequence("Ctrl+0"), self.canvas.fit),
+                          (QKeySequence("Ctrl+1"), self.canvas.actual_size),
+                          (QKeySequence.StandardKey.ZoomIn, lambda: self.canvas.zoom_at(ZOOM_BUTTON_STEP)),
+                          (QKeySequence.StandardKey.ZoomOut, lambda: self.canvas.zoom_at(1 / ZOOM_BUTTON_STEP))):
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             shortcut.activated.connect(slot)
+
+    def _on_zoom_changed(self, scale: float) -> None:
+        mode = " (ajustado)" if self.canvas.is_fitted() else ""
+        self.zoom_label.setText(f"Zoom: {scale * 100:.0f} %{mode}")
 
     def _on_clean_changed(self, clean: bool) -> None:
         self.dirtyChanged.emit(not clean)
@@ -328,6 +357,7 @@ class AnnotateTab(QWidget):
         self.base_image = image
         self.doc = doc
         self._base_key = None
+        self.canvas.reset_view()   # otra captura: se empieza ajustada
         self.export_btn.setEnabled(True)
         for button in self.tool_buttons.values():
             button.setEnabled(True)

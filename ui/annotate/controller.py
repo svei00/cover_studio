@@ -31,7 +31,7 @@ from core.annotate.model import (
     text_label_from_preset,
 )
 from core.annotate.palette import Palette
-from core.annotate.primitives import doc_scale, item_bounds
+from core.annotate.primitives import doc_scale, item_bounds, marker_arrow
 
 Point = tuple[float, float]
 
@@ -199,6 +199,17 @@ class EditController(QObject):
     def scale(self) -> float:
         return doc_scale(self.doc) if self.doc else 1.0
 
+    def marker_arrows(self) -> dict[str, tuple[Point, Point]]:
+        """(inicio, punta) de la flecha de cada marcador que la lleva, para seleccionarla."""
+        if self.doc is None:
+            return {}
+        scale = self.scale()
+        out: dict[str, tuple[Point, Point]] = {}
+        for item in self.doc.items:
+            if isinstance(item, Marker) and (arrow := marker_arrow(item, self.doc, scale)) is not None:
+                out[item.id] = arrow
+        return out
+
     def item_by_id(self, item_id: str | None) -> Annotation | None:
         if self.doc is None or item_id is None:
             return None
@@ -351,7 +362,7 @@ class EditController(QObject):
             if handle is not None:
                 self._mode, self._orig, self._handle = "resize", selected, handle
                 return
-        hit = edit.hit_test(self.doc.items, p, tol, self.scale())
+        hit = edit.hit_test(self.doc.items, p, tol, self.scale(), self.marker_arrows())
         self.select(hit)
         if hit is not None:
             self._mode, self._orig, self._grab = "move", self.item_by_id(hit), p
@@ -472,7 +483,7 @@ class EditController(QObject):
             handle = edit.hit_handle(selected, point, tol)
             if handle is not None:
                 return _HANDLE_CURSORS[handle]
-        if edit.hit_test(self.doc.items, point, tol, self.scale()) is not None:
+        if edit.hit_test(self.doc.items, point, tol, self.scale(), self.marker_arrows()) is not None:
             return Qt.SizeAllCursor
         return Qt.ArrowCursor
 

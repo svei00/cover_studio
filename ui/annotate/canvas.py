@@ -1,12 +1,14 @@
-"""Lienzo que muestra la captura con sus anotaciones, ajustada a la ventana, y
-reenvia el mouse y el teclado al EditController."""
+"""Lienzo que muestra la captura con sus anotaciones y reenvia el mouse y el teclado al
+EditController. Por defecto la captura se ajusta a la ventana; con la rueda se hace zoom hacia el
+cursor y con el boton central (o Espacio + arrastrar) se desplaza. El zoom es solo de VISTA: no
+cambia lo que se exporta."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from core.annotate import crop as cropping
@@ -18,7 +20,12 @@ from ui.annotate.controller import EditController, Tool
 from ui.annotate.painter import paint_primitives
 
 MARGIN = 12
-MAX_ZOOM = 2.0
+MAX_ZOOM = 2.0          # tope del ajuste automatico (una captura chica no se agranda mas de 2x)
+MAX_VIEW_ZOOM = 32.0    # tope del zoom manual
+WHEEL_STEP = 1.2        # factor por cada "clic" de la rueda
+ZOOM_BUTTON_STEP = 1.25
+FIT_SNAP = 1.01         # un zoom manual a menos de 1 % del ajuste vuelve al modo "Ajustar"
+SMOOTH_UP_TO = 2.0      # arriba de esta escala se muestran los pixeles sin suavizar (para ubicar con precision)
 TOLERANCE_PX = 8.0  # tolerancia de clic en pixeles de pantalla
 HANDLE_PX = 9.0
 SELECTION_COLOR = "#4DA3FF"
@@ -29,6 +36,8 @@ HINT = "Arrastra una captura aqui, usa Abrir... o presiona CTRL + V"
 
 
 class AnnotateCanvas(QWidget):
+    zoomChanged = Signal(float)   # escala de la vista (1.0 = 100 %)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumSize(480, 320)
@@ -41,11 +50,18 @@ class AnnotateCanvas(QWidget):
         self._padding = 0
         self._crop: Rect | None = None
         self._controller: EditController | None = None
+        # zoom manual: None = "Ajustar". `_center` es el punto de la imagen que queda en el centro
+        # de la vista; asi un cambio de tamano de la ventana o del recorte no mueve lo que se mira.
+        self._zoom: float | None = None
+        self._center: tuple[float, float] = (0.0, 0.0)
+        self._pan_last: QPointF | None = None
+        self._space_down = False
+        self._last_scale = 0.0
 
     def set_controller(self, controller: EditController) -> None:
         self._controller = controller
         controller.selectionChanged.connect(self.update)
-        controller.toolChanged.connect(lambda _tool: self.update())
+        controller.toolChanged.connect(self._on_tool_changed)
         controller.cropDraftChanged.connect(self.update)
 
     def set_content(
@@ -61,6 +77,7 @@ class AnnotateCanvas(QWidget):
         self._primitives = list(primitives)
         self._lens_images = lens_images or {}
         self._padding = max(0, padding)
+        self._notify_zoom()
         self.update()
 
     # ------------------------------------------------------------------
@@ -85,18 +102,44 @@ class AnnotateCanvas(QWidget):
             return self._crop.x, self._crop.y, self._crop.w, self._crop.h, self._padding
         return (*full, self._padding)
 
-    def view_layout(self) -> tuple[float, float, float]:
-        """(escala, offset_x, offset_y) que ajustan la imagen al widget, centrada."""
-        if not self.has_image():
-            return 1.0, 0.0, 0.0
+    def _fit_scale(self) -> float:
+        """Escala que ajusta todo lo que se muestra (con su margen extra) a la ventana."""
         _fx, _fy, fw, fh, pad = self._frame()
         content_w = fw + 2 * pad  # el margen extra tambien se ve
         content_h = fh + 2 * pad
         avail_w = max(1, self.width() - 2 * MARGIN)
         avail_h = max(1, self.height() - 2 * MARGIN)
-        scale = min(MAX_ZOOM, avail_w / content_w, avail_h / content_h)
-        ox = (self.width() - content_w * scale) / 2
-        oy = (self.height() - content_h * scale) / 2
+        return min(MAX_ZOOM, avail_w / content_w, avail_h / content_h)
+
+    def _clamp_center(self, center: tuple[float, float], scale: float) -> tuple[float, float]:
+        """Mantiene la imagen a la vista: si cabe en la ventana se centra; si no, se puede
+        desplazar hasta que su borde llegue al margen."""
+        fx, fy, fw, fh, pad = self._frame()
+        out = []
+        for c, f, length, view in ((center[0], fx, fw, self.width()), (center[1], fy, fh, self.height())):
+            low, high = f - pad, f + length + pad
+            half = view / (2 * scale)
+            if high - low <= 2 * half:
+                out.append((low + high) / 2)
+            else:
+                m = MARGIN / scale
+                out.append(min(max(c, low + half - m), high - half + m))
+        return out[0], out[1]
+
+    def view_layout(self) -> tuple[float, float, float]:
+        """(escala, offset_x, offset_y) de la vista. Sin zoom manual ajusta la imagen a la ventana,
+        centrada; con zoom, la escala es la elegida y `_center` queda en el centro de la ventana."""
+        if not self.has_image():
+            return 1.0, 0.0, 0.0
+        fx, fy, fw, fh, pad = self._frame()
+        if self._zoom is None:
+            scale = self._fit_scale()
+            center = (fx + fw / 2, fy + fh / 2)
+        else:
+            scale = self._zoom
+            center = self._clamp_center(self._center, scale)
+        ox = self.width() / 2 - (center[0] - fx + pad) * scale
+        oy = self.height() / 2 - (center[1] - fy + pad) * scale
         return scale, ox, oy
 
     def view_to_image(self, pos: QPointF) -> tuple[float, float]:
@@ -108,6 +151,89 @@ class AnnotateCanvas(QWidget):
         scale, ox, oy = self.view_layout()
         fx, fy, _fw, _fh, pad = self._frame()
         return QPointF(ox + (point[0] - fx + pad) * scale, oy + (point[1] - fy + pad) * scale)
+
+    # ------------------------------------------------------------------
+    # Zoom y desplazamiento (solo de vista)
+    # ------------------------------------------------------------------
+
+    def zoom_scale(self) -> float:
+        """Escala actual de la vista (1.0 = 100 %)."""
+        return self.view_layout()[0]
+
+    def is_fitted(self) -> bool:
+        return self._zoom is None
+
+    def _notify_zoom(self) -> None:
+        scale = self.zoom_scale()
+        if abs(scale - self._last_scale) > 1e-9:
+            self._last_scale = scale
+            self.zoomChanged.emit(scale)
+
+    def _set_view(self, zoom: float | None, center: tuple[float, float] | None = None) -> None:
+        if not self.has_image():
+            return
+        if zoom is None:
+            self._zoom = None
+        else:
+            zoom = min(max(zoom, 0.01), MAX_VIEW_ZOOM)
+            if center is not None:
+                self._center = center
+            self._center = self._clamp_center(self._center, zoom)
+            self._zoom = zoom
+        self._notify_zoom()
+        self.update()
+
+    def _view_center_in_image(self) -> tuple[float, float]:
+        return self.view_to_image(QPointF(self.width() / 2, self.height() / 2))
+
+    def fit(self) -> None:
+        """Ajusta la captura a la ventana."""
+        self._set_view(None)
+
+    def actual_size(self) -> None:
+        """100 %: un pixel de la imagen por pixel de pantalla, sobre lo que se estaba mirando."""
+        self._set_view(1.0, self._view_center_in_image())
+
+    def reset_view(self) -> None:
+        """Vista nueva (otra captura): ajustada."""
+        self._zoom = None
+        self._last_scale = 0.0
+        self._notify_zoom()
+
+    def zoom_at(self, factor: float, view_pos: QPointF | None = None) -> None:
+        """Multiplica el zoom por `factor` dejando quieto el punto de la imagen que esta bajo
+        `view_pos` (el centro de la ventana si no se da). Nunca baja del ajuste."""
+        if not self.has_image():
+            return
+        pos = view_pos if view_pos is not None else QPointF(self.width() / 2, self.height() / 2)
+        scale = self.zoom_scale()
+        fit = self._fit_scale()
+        new = min(max(scale * factor, fit), MAX_VIEW_ZOOM)
+        if abs(new - scale) < 1e-9:
+            return
+        if new <= fit * FIT_SNAP:
+            self._set_view(None)
+            return
+        anchor = self.view_to_image(pos)
+        fx, fy, _fw, _fh, pad = self._frame()
+        ox = pos.x() - (anchor[0] - fx + pad) * new
+        oy = pos.y() - (anchor[1] - fy + pad) * new
+        center = (fx - pad + (self.width() / 2 - ox) / new, fy - pad + (self.height() / 2 - oy) / new)
+        self._set_view(new, center)
+
+    def pan_by(self, dx: float, dy: float) -> None:
+        """Desplaza la vista dx, dy pixeles de pantalla (el contenido sigue al mouse)."""
+        scale = self.zoom_scale()
+        cx, cy = self._view_center_in_image()
+        self._set_view(scale, (cx - dx / scale, cy - dy / scale))
+
+    def _on_tool_changed(self, _tool) -> None:
+        self._notify_zoom()   # Recortar muestra la imagen completa: cambia la escala del ajuste
+        self.update()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().resizeEvent(event)
+        self._notify_zoom()
 
     def _tolerance(self) -> float:
         """Tolerancia de clic convertida a pixeles de imagen."""
@@ -125,8 +251,11 @@ class AnnotateCanvas(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, HINT)
             return
         assert self._image is not None
-        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing)
         scale, ox, oy = self.view_layout()
+        hints = QPainter.Antialiasing | QPainter.TextAntialiasing
+        if scale <= SMOOTH_UP_TO:
+            hints |= QPainter.SmoothPixmapTransform
+        painter.setRenderHints(hints)   # con mucho zoom se ven los pixeles tal cual, para ubicar con precision
         painter.save()
         painter.translate(ox, oy)
         painter.scale(scale, scale)
@@ -202,13 +331,26 @@ class AnnotateCanvas(QWidget):
     # Mouse y teclado
     # ------------------------------------------------------------------
 
+    def _panning_button(self, event: QMouseEvent) -> bool:
+        return event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and self._space_down)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if self.has_image() and self._panning_button(event):
+            self.setFocus()
+            self._pan_last = event.position()
+            self.setCursor(Qt.ClosedHandCursor)
+            return
         if event.button() != Qt.LeftButton or self._controller is None or not self.has_image():
             return
         self.setFocus()
         self._controller.press(self.view_to_image(event.position()), self._tolerance())
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if self._pan_last is not None:
+            delta = event.position() - self._pan_last
+            self._pan_last = event.position()
+            self.pan_by(delta.x(), delta.y())
+            return
         if self._controller is None or not self.has_image():
             return
         point = self.view_to_image(event.position())
@@ -218,11 +360,39 @@ class AnnotateCanvas(QWidget):
             self.setCursor(self._controller.cursor_at(point, self._tolerance()))
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if self._pan_last is not None and (event.button() == Qt.MiddleButton or event.button() == Qt.LeftButton):
+            self._pan_last = None
+            self.setCursor(Qt.OpenHandCursor if self._space_down else Qt.ArrowCursor)
+            return
         if event.button() != Qt.LeftButton or self._controller is None or not self.has_image():
             return
         point = self.view_to_image(event.position())
         self._controller.release(point)
         self.setCursor(self._controller.cursor_at(point, self._tolerance()))
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 (Qt override)
+        """Rueda = zoom hacia el cursor; el desplazamiento horizontal del touchpad mueve la vista."""
+        if not self.has_image():
+            return
+        delta = event.angleDelta()
+        if delta.y():
+            self.zoom_at(WHEEL_STEP ** (delta.y() / 120), event.position())
+        if delta.x():
+            self.pan_by(delta.x() / 4, 0.0)
+        event.accept()
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:  # noqa: N802 (Qt override)
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            self._space_down = False
+            if self._pan_last is None:
+                self.unsetCursor()
+            return
+        super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._space_down = False
+        self._pan_last = None
+        super().focusOutEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 (Qt override)
         c = self._controller
@@ -230,6 +400,11 @@ class AnnotateCanvas(QWidget):
             super().keyPressEvent(event)
             return
         key = event.key()
+        if key == Qt.Key_Space:
+            if not event.isAutoRepeat():
+                self._space_down = True
+                self.setCursor(Qt.OpenHandCursor)
+            return
         step = NUDGE_BIG if event.modifiers() & Qt.ShiftModifier else NUDGE
         if key in (Qt.Key_Delete, Qt.Key_Backspace):
             c.delete_selected()

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from enum import Enum
 
@@ -88,10 +88,18 @@ def _contains(rect: Rect, p: Point) -> bool:
 # Hit-testing
 # --------------------------------------------------------------------------
 
-def hit_item(item: Annotation, p: Point, tol: float, scale: float) -> bool:
+Arrows = Mapping[str, tuple[Point, Point]]   # id de marcador -> (inicio, punta) de su flecha
+
+
+def hit_item(
+    item: Annotation, p: Point, tol: float, scale: float, arrows: Arrows | None = None
+) -> bool:
     if isinstance(item, Marker):
         outer = item.rect.inflate(tol)
         inner = item.rect.inflate(-tol)
+        arrow = (arrows or {}).get(item.id)
+        if arrow is not None and distance_to_segment(p, arrow[0], arrow[1]) <= tol:
+            return True   # la flecha del marcador tambien cuenta
         if item.rect.w <= 2 * tol or item.rect.h <= 2 * tol:
             return _contains(outer, p)
         return _contains(outer, p) and not _contains(inner, p)
@@ -120,10 +128,17 @@ def hit_lens_part(m: Magnifier, p: Point, tol: float) -> str | None:
     return None
 
 
-def hit_test(items: Sequence[Annotation], p: Point, tol: float, scale: float) -> str | None:
-    """Id de la anotacion mas arriba (la ultima dibujada) bajo el punto."""
+def hit_test(
+    items: Sequence[Annotation], p: Point, tol: float, scale: float, arrows: Arrows | None = None
+) -> str | None:
+    """Id de la anotacion mas arriba (la ultima dibujada) bajo el punto. Un marcador solo
+    responde en su borde y su flecha (asi se puede seleccionar lo que hay DENTRO de el);
+    si no hay nada mas bajo el punto, su interior tambien lo selecciona."""
     for item in reversed(items):
-        if hit_item(item, p, tol, scale):
+        if hit_item(item, p, tol, scale, arrows):
+            return item.id
+    for item in reversed(items):
+        if isinstance(item, Marker) and _contains(item.rect.inflate(tol), p):
             return item.id
     return None
 
