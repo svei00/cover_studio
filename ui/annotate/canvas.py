@@ -311,7 +311,7 @@ class AnnotateCanvas(QWidget):
         item = self._controller.selected_item()
         if item is None:
             return
-        handles = edit.item_handles(item)
+        handles = edit.item_handles(item, self._controller.marker_arrows())
         if not isinstance(item, Arrow):
             pen = QPen(QColor(SELECTION_COLOR), 1.5, Qt.DashLine)
             painter.setPen(pen)

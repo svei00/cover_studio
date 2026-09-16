@@ -152,10 +152,17 @@ def rect_handles(r: Rect) -> dict[Handle, Point]:
     }
 
 
-def item_handles(item: Annotation) -> dict[Handle, Point]:
+def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle, Point]:
     """Asas de redimensionado: 8 para rectangulos, 2 para flechas, para la lupa
-    las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom."""
-    if isinstance(item, (Marker, Redaction, Highlight)):
+    las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom. Un marcador
+    con flecha suma START (la cola) y END (la punta) de la flecha, que se pueden arrastrar."""
+    if isinstance(item, Marker):
+        handles = rect_handles(item.rect)
+        arrow = (arrows or {}).get(item.id)
+        if arrow is not None:
+            handles[Handle.START], handles[Handle.END] = arrow
+        return handles
+    if isinstance(item, (Redaction, Highlight)):
         return rect_handles(item.rect)
     if isinstance(item, Magnifier):
         handles = rect_handles(lens.effective_source(item))
@@ -167,10 +174,10 @@ def item_handles(item: Annotation) -> dict[Handle, Point]:
     return {}
 
 
-def hit_handle(item: Annotation, p: Point, tol: float) -> Handle | None:
+def hit_handle(item: Annotation, p: Point, tol: float, arrows: Arrows | None = None) -> Handle | None:
     """Asa bajo el punto; si hay varias cerca gana la mas cercana."""
     best: tuple[float, Handle] | None = None
-    for handle, pos in item_handles(item).items():
+    for handle, pos in item_handles(item, arrows).items():
         d = math.hypot(p[0] - pos[0], p[1] - pos[1])
         if d <= tol and (best is None or d < best[0]):
             best = (d, handle)
@@ -204,9 +211,31 @@ def selection_rects(item: Annotation, scale: float) -> list[Rect]:
 # Mover y redimensionar (devuelven una anotacion nueva; las originales son inmutables)
 # --------------------------------------------------------------------------
 
-def move_item(item: Annotation, dx: float, dy: float, part: str | None = None) -> Annotation:
-    """part solo importa para la lupa: 'lens' mueve el lente, 'source' el origen,
-    otro valor mueve ambos."""
+def hit_marker_part(m: Marker, p: Point, tol: float, arrows: Arrows | None = None) -> str | None:
+    """'arrow' si el punto esta sobre la flecha del marcador (mas cerca de ella que del borde del
+    recuadro): arrastrar ahi mueve solo la flecha; None = el marcador completo."""
+    arrow = (arrows or {}).get(m.id)
+    if arrow is None:
+        return None
+    d_arrow = distance_to_segment(p, arrow[0], arrow[1])
+    return "arrow" if d_arrow <= tol and d_arrow < _distance_to_border(m.rect, p) else None
+
+
+def _distance_to_border(rect: Rect, p: Point) -> float:
+    """Distancia del punto al contorno del rectangulo (dentro o fuera)."""
+    dx = max(rect.x - p[0], 0.0, p[0] - rect.right)
+    dy = max(rect.y - p[1], 0.0, p[1] - rect.bottom)
+    if dx or dy:
+        return math.hypot(dx, dy)
+    return min(p[0] - rect.x, rect.right - p[0], p[1] - rect.y, rect.bottom - p[1])
+
+
+def move_item(
+    item: Annotation, dx: float, dy: float, part: str | None = None, arrows: Arrows | None = None
+) -> Annotation:
+    """part: para la lupa, 'lens' mueve el lente, 'source' el origen, otro valor mueve ambos; para
+    un marcador, 'arrow' mueve solo su flecha (necesita `arrows` para saber donde esta) y otro
+    valor mueve el marcador con su flecha."""
     if isinstance(item, Magnifier):
         s, c = item.source, item.lens_center
         moved_source = Rect(s.x + dx, s.y + dy, s.w, s.h)
@@ -216,7 +245,23 @@ def move_item(item: Annotation, dx: float, dy: float, part: str | None = None) -
         if part == "source":
             return replace(item, source=moved_source)
         return replace(item, source=moved_source, lens_center=moved_center)
-    if isinstance(item, (Marker, Redaction, Highlight)):
+    if isinstance(item, Marker):
+        if part == "arrow":
+            arrow = (arrows or {}).get(item.id)
+            if arrow is None:
+                return item
+            (sx, sy), (tx, ty) = arrow
+            return replace(item, arrow_start=(sx + dx, sy + dy), arrow_tip=(tx + dx, ty + dy))
+        r = item.rect
+        moved = replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
+        if item.custom_arrow:   # la flecha puesta a mano viaja con el marcador
+            moved = replace(
+                moved,
+                arrow_start=(item.arrow_start[0] + dx, item.arrow_start[1] + dy),
+                arrow_tip=(item.arrow_tip[0] + dx, item.arrow_tip[1] + dy),
+            )
+        return moved
+    if isinstance(item, (Redaction, Highlight)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
     if isinstance(item, Arrow):
@@ -232,9 +277,22 @@ def move_item(item: Annotation, dx: float, dy: float, part: str | None = None) -
     return item
 
 
-def resize_item(item: Annotation, handle: Handle, p: Point, min_size: float = 4.0) -> Annotation:
+def resize_item(
+    item: Annotation, handle: Handle, p: Point, min_size: float = 4.0, arrows: Arrows | None = None
+) -> Annotation:
     """Mueve el asa al punto. Los rectangulos nunca bajan de min_size; si se
-    arrastra el asa mas alla del lado opuesto, se queda en min_size."""
+    arrastra el asa mas alla del lado opuesto, se queda en min_size. En un marcador, START y
+    END mueven la cola o la punta de su flecha (la otra punta se queda donde estaba)."""
+    if isinstance(item, Marker) and handle in (Handle.START, Handle.END):
+        arrow = (arrows or {}).get(item.id)
+        if arrow is None:
+            return item
+        start, tip = arrow
+        if handle is Handle.START:
+            start = p
+        else:
+            tip = p
+        return replace(item, arrow_start=start, arrow_tip=tip)
     if isinstance(item, Arrow):
         if handle is Handle.START:
             return replace(item, start=p)

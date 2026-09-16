@@ -398,18 +398,37 @@ class PropertiesPanel(QWidget):
         self._field_row(form, "Esquinas", self._hl_radius, "radius", HIGHLIGHT_RADIUS)
         return page
 
+    def _reset_marker_arrow(self) -> None:
+        self._c.edit_selected(_merge=False, arrow=ArrowSide.AUTO, arrow_start=None, arrow_tip=None)
+
     def _build_marker_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
         self._marker_arrow = QComboBox()
         for side, label in ARROW_LABELS.items():
             self._marker_arrow.addItem(label, side.value)
+        # elegir un lado es pedir la flecha AUTOMATICA de ese lado: suelta la que se movio a mano
         self._marker_arrow.currentIndexChanged.connect(
-            lambda _i: self._apply(arrow=ArrowSide(self._marker_arrow.currentData()))
+            lambda _i: self._apply(
+                arrow=ArrowSide(self._marker_arrow.currentData()), arrow_start=None, arrow_tip=None
+            )
         )
         self._marker_glow = QCheckBox("Resplandor")
         self._marker_glow.toggled.connect(lambda on: self._apply(glow=on))
-        self._field_row(form, "Lado de la flecha", self._marker_arrow, "arrow", ArrowSide.AUTO)
+        self._reset_row(
+            form, "Lado de la flecha", self._marker_arrow, self._reset_marker_arrow,
+            lambda: not isinstance(self._c.selected_item(), Marker)
+            or (self._c.selected_item().arrow is ArrowSide.AUTO and not self._c.selected_item().custom_arrow),
+        )
+        hint = QLabel("Arrastra la punta o la cola de la flecha para alargarla, acortarla o girarla; "
+                      "arrastra su cuerpo para moverla.")
+        hint.setWordWrap(True)
+        self._marker_arrow_hint = hint
+        form.addRow(hint)
+        self._marker_arrow_reset = QPushButton("Recolocar flecha")
+        self._marker_arrow_reset.setToolTip("Devuelve la flecha a la posicion automatica de su lado")
+        self._marker_arrow_reset.clicked.connect(self._c.auto_place_selected_arrow)
+        form.addRow(self._marker_arrow_reset)
         form.addRow(self._marker_glow)
         self._marker_stroke = self._color_row(form, "Recuadro", "stroke_color")
         self._marker_arrow_color = self._color_row(form, "Flecha", "arrow_color")
@@ -574,6 +593,8 @@ class PropertiesPanel(QWidget):
                 self._pages.setCurrentIndex(_PAGE_MARKER)
                 self._title.setText("Marcador")
                 self._set_combo(self._marker_arrow, item.arrow.value)
+                self._marker_arrow_reset.setVisible(item.custom_arrow)
+                self._marker_arrow_hint.setVisible(item.arrow is not ArrowSide.NONE)
                 self._marker_glow.setChecked(item.glow)
                 self._marker_stroke.set_value(item.stroke_color or pal.marker, item.stroke_color is not None)
                 self._marker_arrow_color.set_value(item.arrow_color or pal.arrow, item.arrow_color is not None)

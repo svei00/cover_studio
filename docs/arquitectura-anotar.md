@@ -386,3 +386,18 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Barra bajo el lienzo: Ajustar (CTRL + 0), 100 % (CTRL + 1), etiqueta de zoom; CTRL + / CTRL - acercan y
   alejan. Con escala > 2x se pintan los pixeles sin suavizar, para ubicar con precision.
 - Cambiar de captura reinicia la vista a "Ajustar". El export no depende del zoom (hay un test con hash).
+
+### Flecha del marcador movible
+
+- `Marker.arrow_start` / `arrow_tip` (opcionales, van juntos; `Marker.custom_arrow`): la flecha puesta a mano, en
+  pixeles de la imagen. None = la flecha automatica del lado de `arrow`. `primitives.marker_arrow` devuelve los
+  puntos ya resueltos (propios o automaticos) y es lo que usan el dibujo, la seleccion y las asas.
+- Un marcador con flecha suma dos asas, START (cola) y END (punta), a sus 8 del recuadro; gana la mas cercana al
+  mouse. Arrastrar una fija AMBOS extremos (el otro se queda donde estaba). Arrastrar el cuerpo de la flecha
+  (`edit.hit_marker_part` = "arrow": mas cerca de ella que del borde del recuadro) mueve solo la flecha, incluso
+  sin haber seleccionado el marcador antes. Mover el marcador por su borde arrastra tambien una flecha propia.
+- Los puntos de las flechas se congelan al empezar el gesto (`controller._press_arrows`): durante el arrastre
+  no se recalculan. Cada gesto es UN paso de deshacer.
+- Elegir un lado en el panel pide la flecha AUTOMATICA de ese lado (suelta la propia); el boton de restablecer
+  del lado y "Recolocar flecha" (solo visible con flecha propia) la devuelven a automatica.
+- `"arrow_start"`/`"arrow_tip"` en el JSON; si falta o es invalido uno de los dos, ninguno cuenta.

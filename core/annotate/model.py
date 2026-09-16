@@ -86,6 +86,14 @@ class Marker:
     stroke_color: str | None = None
     glow_color: str | None = None
     arrow_color: str | None = None
+    # flecha movida a mano: inicio (cola) y punta, en pixeles de la imagen. Van juntos; None = la
+    # flecha automatica del lado elegido en `arrow`.
+    arrow_start: tuple[float, float] | None = None
+    arrow_tip: tuple[float, float] | None = None
+
+    @property
+    def custom_arrow(self) -> bool:
+        return self.arrow_start is not None and self.arrow_tip is not None
 
 
 @dataclass(frozen=True)

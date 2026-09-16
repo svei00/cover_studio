@@ -172,6 +172,8 @@ def marker_arrow(m: Marker, doc: AnnotationDoc, scale: float) -> tuple[Point, Po
     side = resolve_arrow_side(m, doc.image_size, doc.items, scale, doc.view)
     if side is ArrowSide.NONE:
         return None
+    if m.custom_arrow:
+        return m.arrow_start, m.arrow_tip
     return _marker_arrow_points(m.rect, side, scale)
 
 
@@ -247,7 +249,10 @@ def marker_primitives(
             out.append(PRect(m.rect.inflate(o), glow_color, style.GLOW_RING_WIDTH * scale, op, rx + o))
     out.append(PRect(m.rect, stroke, style.MARKER_STROKE * scale, 1.0, rx))
     if side is not ArrowSide.NONE:
-        start, tip = _marker_arrow_points(m.rect, side, scale)
+        if m.custom_arrow:
+            start, tip = m.arrow_start, m.arrow_tip
+        else:
+            start, tip = _marker_arrow_points(m.rect, side, scale)
         out.extend(_arrow_parts(start, tip, scale, m.glow, arrow_color, glow_color))
     return out
 

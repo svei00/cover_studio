@@ -180,6 +180,7 @@ class EditController(QObject):
         self._grab: Point = (0.0, 0.0)
         self._anchor: Point = (0.0, 0.0)
         self.crop_draft: Rect | None = None   # recorte en curso (solo durante el gesto)
+        self._press_arrows: dict[str, tuple[Point, Point]] = {}   # flechas de los marcadores al empezar el gesto
 
     # ------------------------------------------------------------------
     # Estado
@@ -357,16 +358,21 @@ class EditController(QObject):
     def _press_select(self, p: Point, tol: float) -> None:
         assert self.doc is not None
         selected = self.selected_item()
+        arrows = self._press_arrows = self.marker_arrows()   # se congelan: durante el gesto no se recalculan
         if selected is not None:
-            handle = edit.hit_handle(selected, p, tol)
+            handle = edit.hit_handle(selected, p, tol, arrows)
             if handle is not None:
                 self._mode, self._orig, self._handle = "resize", selected, handle
                 return
-        hit = edit.hit_test(self.doc.items, p, tol, self.scale(), self.marker_arrows())
+        hit = edit.hit_test(self.doc.items, p, tol, self.scale(), arrows)
         self.select(hit)
         if hit is not None:
             self._mode, self._orig, self._grab = "move", self.item_by_id(hit), p
-            self._part = edit.hit_lens_part(self._orig, p, tol) if isinstance(self._orig, Magnifier) else None
+            self._part = None
+            if isinstance(self._orig, Magnifier):
+                self._part = edit.hit_lens_part(self._orig, p, tol)
+            elif isinstance(self._orig, Marker):
+                self._part = edit.hit_marker_part(self._orig, p, tol, arrows)
 
     def _begin_create(self, p: Point) -> None:
         assert self.doc is not None
@@ -406,9 +412,10 @@ class EditController(QObject):
         if self._orig is None:
             return
         if self._mode == "move":
-            self._set_item(edit.move_item(self._orig, p[0] - self._grab[0], p[1] - self._grab[1], self._part))
+            self._set_item(edit.move_item(
+                self._orig, p[0] - self._grab[0], p[1] - self._grab[1], self._part, self._press_arrows))
         elif self._mode == "resize" and self._handle is not None:
-            self._set_item(edit.resize_item(self._orig, self._handle, p))
+            self._set_item(edit.resize_item(self._orig, self._handle, p, arrows=self._press_arrows))
         elif self._mode == "create":
             if isinstance(self._orig, Arrow):
                 self._set_item(replace(self._orig, end=p))
@@ -463,6 +470,12 @@ class EditController(QObject):
             source or m.source, m.zoom, m.shape, self.doc.image_size, obstacles, region=self.doc.view
         )
 
+    def auto_place_selected_arrow(self) -> None:
+        """Devuelve la flecha del marcador seleccionado a la automatica de su lado."""
+        selected = self.selected_item()
+        if isinstance(selected, Marker) and selected.custom_arrow:
+            self.edit_selected(_merge=False, arrow_start=None, arrow_tip=None)
+
     def auto_place_selected_lens(self) -> None:
         """Recoloca el lente seleccionado en el lado con mas espacio libre."""
         selected = self.selected_item()
@@ -480,7 +493,7 @@ class EditController(QObject):
             return Qt.CrossCursor
         selected = self.selected_item()
         if selected is not None:
-            handle = edit.hit_handle(selected, point, tol)
+            handle = edit.hit_handle(selected, point, tol, self.marker_arrows())
             if handle is not None:
                 return _HANDLE_CURSORS[handle]
         if edit.hit_test(self.doc.items, point, tol, self.scale(), self.marker_arrows()) is not None:

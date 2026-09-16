@@ -56,6 +56,20 @@ def _crop_or_none(value: object, image_size: tuple[int, int]) -> Rect | None:
     return normalize_crop(Rect(*(float(v) for v in value)), image_size)
 
 
+def _point_or_none(value: object) -> tuple[float, float] | None:
+    if (isinstance(value, (list, tuple)) and len(value) == 2
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value)):
+        return float(value[0]), float(value[1])
+    return None
+
+
+def _custom_arrow(start: object, tip: object) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    """Inicio y punta de la flecha movida a mano; si falta o es invalido uno de los dos, la
+    flecha vuelve a ser automatica (los dos van juntos)."""
+    a, b = _point_or_none(start), _point_or_none(tip)
+    return (a, b) if a is not None and b is not None else (None, None)
+
+
 def _number_or_default(value: object, low: float, high: float, default: float) -> float:
     """Un numero dentro de [low, high]; cualquier otra cosa usa `default`."""
     if isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high:
@@ -94,7 +108,9 @@ def item_to_dict(item: Annotation) -> dict:
     if isinstance(item, Marker):
         return {"type": "marker", "id": item.id, "rect": _rect_to_list(item.rect),
                 "arrow": item.arrow.value, "glow": item.glow, "stroke_color": item.stroke_color,
-                "glow_color": item.glow_color, "arrow_color": item.arrow_color}
+                "glow_color": item.glow_color, "arrow_color": item.arrow_color,
+                "arrow_start": None if item.arrow_start is None else list(item.arrow_start),
+                "arrow_tip": None if item.arrow_tip is None else list(item.arrow_tip)}
     if isinstance(item, Arrow):
         return {"type": "arrow", "id": item.id, "start": list(item.start),
                 "end": list(item.end), "glow": item.glow, "color": item.color,
@@ -130,6 +146,7 @@ def item_from_dict(data: dict) -> Annotation:
                 data["id"], Rect(*data["rect"]), ArrowSide(data["arrow"]), data["glow"],
                 _color_or_none(data.get("stroke_color")), _color_or_none(data.get("glow_color")),
                 _color_or_none(data.get("arrow_color")),
+                *_custom_arrow(data.get("arrow_start"), data.get("arrow_tip")),
             )
         if kind == "arrow":
             return Arrow(
