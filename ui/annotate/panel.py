@@ -710,9 +710,12 @@ class PropertiesPanel(QWidget):
         self._lens_connector_style_row = self._field_row(form, "Estilo", self._lens_connector_style, "connector_style", LineStyle.SOLID)
 
         self._section(form, "Resplandor")
-        self._lens_glow = QCheckBox("Resplandor")
+        self._lens_glow = QCheckBox("Resplandor del lente")
         self._lens_glow.toggled.connect(lambda on: self._apply(glow=on))
         form.addRow(self._lens_glow)
+        self._lens_connector_glow = QCheckBox("Resplandor del conector")
+        self._lens_connector_glow.toggled.connect(lambda on: self._apply(connector_glow=on))
+        form.addRow(self._lens_connector_glow)
         self._lens_glow_color = self._color_row(form, "Color", "glow_color")
         form.addRow(replace_btn)
         return page
@@ -867,7 +870,12 @@ class PropertiesPanel(QWidget):
                     self._lens_form.setRowVisible(row, item.connector)
                 self._lens_glow.setChecked(item.glow)
                 self._lens_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
-                self._lens_form.setRowVisible(self._lens_glow_color, item.glow)
+                self._lens_connector_glow.setChecked(item.connector_glow)
+                self._lens_form.setRowVisible(self._lens_connector_glow, item.connector)
+                # el color del resplandor es uno solo: se ve si alguno de los dos resplandores esta activo
+                self._lens_form.setRowVisible(
+                    self._lens_glow_color, item.glow or (item.connector and item.connector_glow)
+                )
             elif isinstance(item, Highlight):
                 self._pages.setCurrentIndex(_PAGE_HIGHLIGHT)
                 self._title.setText("Resaltador")

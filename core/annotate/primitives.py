@@ -404,6 +404,18 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
                 out.append(PRect(box.inflate(o), glow_color, width, op, rx + o))
 
     sw = (src_w + 2) * scale   # el contorno navy del origen
+    if m.connector_glow:
+        # halo del conector: lineas apiladas, de la mas ancha (y mas tenue) a la mas angosta, con el mismo alcance
+        # y la misma progresion que los anillos del resplandor del lente; llevan las rayas del conector y van
+        # debajo de su contorno navy y de su trazo de color
+        glow_color = m.glow_color or palette.glow
+        for a, b in lens.connector_segments(m):
+            for off, op in reversed(style.GLOW_RINGS):
+                out.append(PLine(
+                    a, b, glow_color, con_w * scale + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH,
+                    con_dash, con_cap,
+                ))
+
     if m.shape is LensShape.CIRCLE:
         out.append(PCircle(src.center, src.w / 2, None, style.CARD_FILL, sw, opacity=0.6))
         out.append(PCircle(src.center, src.w / 2, None, src_color, src_w * scale, dash=src_dash, cap=src_cap))

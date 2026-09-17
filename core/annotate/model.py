@@ -214,6 +214,7 @@ class Magnifier:
     connector_color: str | None = None
     connector_width: float | None = None
     connector_style: LineStyle = LineStyle.SOLID
+    connector_glow: bool = False          # resplandor del conector (su color es `glow_color`, el del lente)
 
 
 @dataclass(frozen=True)

@@ -26,6 +26,7 @@ GLOW_RINGS: tuple[tuple[float, float], ...] = tuple(
     (i * 2.2, round(0.55 * (1 - i / 10.0) ** 1.6, 4)) for i in range(1, 10)
 )
 GLOW_RING_WIDTH = 4.5
+CONNECTOR_GLOW_STRENGTH = 0.45   # el halo del conector apila 9 lineas llenas: cada una va a esta fraccion de la opacidad del anillo
 
 # Resaltador: colores estandar de papeleria (medidos sobre fondo claro con Marcador y sobre
 # fondo oscuro con Translucido, 2026-10).

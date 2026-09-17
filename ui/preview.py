@@ -22,7 +22,7 @@ from core.geometry import (
 
 
 class _RenderSignals(QObject):
-    finished = Signal(bytes, object)  # png bytes, BandGeometry (en px reales del lienzo)
+    finished = Signal(bytes, object, object)  # png bytes, BandGeometry y rect del subtitulo (o None), en px del lienzo
     failed = Signal(str)
 
 
@@ -59,16 +59,18 @@ class _RenderTask(QRunnable):
             self.signals.failed.emit(str(exc))
             return
         band = compute_band_geometry(self._config)
-        self.signals.finished.emit(png_bytes, band)
+        self.signals.finished.emit(png_bytes, band, self._subtitle.rect if self._subtitle else None)
 
 
 class PreviewWidget(QLabel):
-    """Muestra la portada renderizada y deja arrastrar la banda con el mouse
-    para mover band_margin_left / band_margin_top."""
+    """Muestra la portada renderizada y deja arrastrar con el mouse la banda (band_margin_left /
+    band_margin_top) y el subtitulo (su esquina superior izquierda). El subtitulo va dibujado encima:
+    si se solapan, gana."""
 
     PREVIEW_WIDTH = 800
 
     bandRepositioned = Signal(float, float)  # nuevo margin_left, margin_top (px reales del lienzo)
+    subtitleRepositioned = Signal(float, float)  # nueva esquina superior izquierda del subtitulo (px del lienzo)
     renderFailed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -83,6 +85,8 @@ class PreviewWidget(QLabel):
         self._thread_pool = QThreadPool(self)
         self._canvas_size = CanvasSize(1920, 1080)
         self._band_rect: BandGeometry | None = None
+        self._subtitle_rect: BandGeometry | None = None
+        self._drag_target: str | None = None   # "band" o "subtitle"
         self._source_pixmap: QPixmap | None = None
         self._scale = 1.0  # px reales del lienzo -> px del widget
         self._offset = (0.0, 0.0)
@@ -124,11 +128,12 @@ class PreviewWidget(QLabel):
         task.signals.failed.connect(self._on_render_failed)
         self._thread_pool.start(task)
 
-    def _on_render_finished(self, png_bytes: bytes, band: BandGeometry) -> None:
+    def _on_render_finished(self, png_bytes: bytes, band: BandGeometry, subtitle: BandGeometry | None = None) -> None:
         self._render_in_flight = False
         pixmap = QPixmap()
         pixmap.loadFromData(png_bytes, "PNG")
         self._band_rect = band
+        self._subtitle_rect = subtitle
         self._source_pixmap = pixmap
         self._redraw()
         self._advance_queue()
@@ -164,17 +169,32 @@ class PreviewWidget(QLabel):
         scale = self._scale or 1.0
         return (x - off_x) / scale, (y - off_y) / scale
 
-    def _band_rect_widget(self) -> tuple[float, float, float, float] | None:
-        if self._band_rect is None:
+    def _rect_widget(self, rect: BandGeometry | None) -> tuple[float, float, float, float] | None:
+        if rect is None:
             return None
         off_x, off_y = self._offset
-        band = self._band_rect
         return (
-            off_x + band.x * self._scale,
-            off_y + band.y * self._scale,
-            band.width * self._scale,
-            band.height * self._scale,
+            off_x + rect.x * self._scale,
+            off_y + rect.y * self._scale,
+            rect.width * self._scale,
+            rect.height * self._scale,
         )
+
+    def _band_rect_widget(self) -> tuple[float, float, float, float] | None:
+        return self._rect_widget(self._band_rect)
+
+    def _subtitle_rect_widget(self) -> tuple[float, float, float, float] | None:
+        return self._rect_widget(self._subtitle_rect)
+
+    def _target_at(self, x: float, y: float) -> tuple[str, BandGeometry] | None:
+        """Que se puede arrastrar bajo el punto (px del widget): el subtitulo (dibujado encima) o la banda."""
+        for name, rect_widget, rect in (
+            ("subtitle", self._subtitle_rect_widget(), self._subtitle_rect),
+            ("band", self._band_rect_widget(), self._band_rect),
+        ):
+            if rect is not None and rect_widget is not None and self._point_in_rect(x, y, rect_widget):
+                return name, rect
+        return None
 
     @staticmethod
     def _point_in_rect(x: float, y: float, rect: tuple[float, float, float, float]) -> bool:
@@ -186,28 +206,32 @@ class PreviewWidget(QLabel):
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
-        rect = self._band_rect_widget()
         pos = event.position()
-        if rect is None or self._band_rect is None or not self._point_in_rect(pos.x(), pos.y(), rect):
+        target = self._target_at(pos.x(), pos.y())
+        if target is None:
             return
+        name, rect = target
         self._dragging = True
+        self._drag_target = name
         canvas_x, canvas_y = self._widget_to_canvas(pos.x(), pos.y())
-        self._drag_grab_offset = (canvas_x - self._band_rect.x, canvas_y - self._band_rect.y)
+        self._drag_grab_offset = (canvas_x - rect.x, canvas_y - rect.y)
         self.setCursor(Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
         pos = event.position()
         if not self._dragging:
-            rect = self._band_rect_widget()
-            hovering = rect is not None and self._point_in_rect(pos.x(), pos.y(), rect)
-            self.setCursor(Qt.OpenHandCursor if hovering else Qt.ArrowCursor)
+            self.setCursor(Qt.OpenHandCursor if self._target_at(pos.x(), pos.y()) else Qt.ArrowCursor)
             return
         canvas_x, canvas_y = self._widget_to_canvas(pos.x(), pos.y())
         new_left = canvas_x - self._drag_grab_offset[0]
         new_top = canvas_y - self._drag_grab_offset[1]
-        self.bandRepositioned.emit(new_left, new_top)
+        if self._drag_target == "subtitle":
+            self.subtitleRepositioned.emit(new_left, new_top)
+        else:
+            self.bandRepositioned.emit(new_left, new_top)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
         if self._dragging:
             self._dragging = False
+            self._drag_target = None
             self.setCursor(Qt.OpenHandCursor)

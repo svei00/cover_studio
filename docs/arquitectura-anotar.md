@@ -491,3 +491,27 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   dibuja HACIA ADENTRO de la caja, asi el tamano y la posicion de la franja no cambian con el grosor.
 - La vista previa (`PreviewWidget.request_render(..., subtitle)`) y la exportacion usan el mismo `build_svg` y
   el mismo rasterizador (`resvg`; el proyecto no usa cairosvg): hay un test de que dan los mismos bytes.
+
+### Lupa: resplandor del conector
+
+- `Magnifier.connector_glow` (apagado por defecto; su color es `glow_color`, el mismo del resplandor del lente). Es un
+  halo de 9 lineas apiladas por segmento (la mas ancha y tenue primero), con el mismo alcance y progresion que los
+  anillos del lente (`style.GLOW_RINGS`, opacidad x `CONNECTOR_GLOW_STRENGTH`). Llevan las rayas y el remate del
+  conector y van DEBAJO de su contorno navy y de su trazo. Se probo primero la franja simple de las flechas (30 %) y
+  se veia demasiado tenue sobre un conector delgado. Sin conector no hay halo. El panel tiene "Resplandor del
+  lente" y "Resplandor del conector"; el color se ve si cualquiera de los dos esta activo.
+
+### Portada: arrastrar el subtitulo (y el bug de la banda)
+
+- `CoverConfig.subtitle_x/subtitle_y`: esquina superior izquierda elegida arrastrando (None = la del combo;
+  van juntas; un valor danado o incompleto en un preset se ignora). `compute_subtitle_layout` la respeta y la
+  limita al lienzo. Elegir una posicion en el combo la suelta; el boton "Volver a la posicion automatica" tambien.
+  Se redondea a pixeles enteros: un borde de 2 px entre dos pixeles sale difuso.
+- `PreviewWidget` conoce el rect de la banda y el del subtitulo (la senal `finished` ahora trae los dos) y decide
+  que se arrastra con `_target_at`: el subtitulo gana si se solapan (esta dibujado encima). Emite
+  `bandRepositioned` o `subtitleRepositioned`.
+- BUG (existia desde el primer commit del arrastre): `_on_band_dragged` actualizaba la configuracion pero NUNCA pedia
+  redibujar (`SliderSpinBox.set_value` bloquea las senales), asi que tras el primer arrastre la vista previa se
+  quedaba en la primera posicion y la zona "agarrable" (calculada con la imagen vieja) no coincidia: el titulo
+  parecia trabado. Ahora ambos manejadores llaman a `_trigger_preview_render()` (el render coalesce los pedidos).
+  `tests/test_cover_drag.py` lo cubre con renders reales en el hilo.

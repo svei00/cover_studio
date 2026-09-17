@@ -314,6 +314,14 @@ class MainWindow(QMainWindow):
         self.subtitle_position_combo.currentIndexChanged.connect(self._on_subtitle_position_changed)
         layout.addWidget(_row("Posicion", self.subtitle_position_combo))
 
+        self.subtitle_reset_position_btn = QPushButton("Volver a la posicion automatica")
+        self.subtitle_reset_position_btn.setToolTip(
+            "El subtitulo se arrastra en la vista previa; esto lo devuelve a la posicion elegida arriba"
+        )
+        self.subtitle_reset_position_btn.setEnabled(False)
+        self.subtitle_reset_position_btn.clicked.connect(self._on_subtitle_reset_position_clicked)
+        layout.addWidget(self.subtitle_reset_position_btn)
+
         self.subtitle_text_color_picker = ColorPickerButton(self.config.subtitle_text_color)
         self.subtitle_text_color_picker.colorChanged.connect(self._on_subtitle_text_color_changed)
         layout.addWidget(_row("Color del texto", self.subtitle_text_color_picker))
@@ -547,10 +555,11 @@ class MainWindow(QMainWindow):
     def _build_preview_panel(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.addWidget(QLabel("Vista previa — arrastra la banda para reposicionarla"))
+        layout.addWidget(QLabel("Vista previa — arrastra la banda o el subtitulo para reposicionarlos"))
 
         self.preview_widget = PreviewWidget()
         self.preview_widget.bandRepositioned.connect(self._on_band_dragged)
+        self.preview_widget.subtitleRepositioned.connect(self._on_subtitle_dragged)
         self.preview_widget.renderFailed.connect(self._on_preview_render_failed)
         layout.addWidget(self.preview_widget, stretch=1)
 
@@ -619,6 +628,7 @@ class MainWindow(QMainWindow):
 
         self.save_svg_checkbox.setChecked(config.save_svg_alongside)
         self.config = config
+        self._update_subtitle_reset_button()
 
     @staticmethod
     def _select_combo_data(combo: QComboBox, data) -> None:
@@ -666,6 +676,8 @@ class MainWindow(QMainWindow):
 
     def _on_subtitle_position_changed(self, _index: int) -> None:
         self.config.subtitle_position = SubtitlePosition(self.subtitle_position_combo.currentData())
+        self.config.subtitle_x = self.config.subtitle_y = None   # elegir una posicion suelta la puesta a mano
+        self._update_subtitle_reset_button()
 
     def _on_subtitle_text_color_changed(self, hex_color: str) -> None:
         self.config.subtitle_text_color = hex_color
@@ -961,6 +973,29 @@ class MainWindow(QMainWindow):
         self.band_margin_top_slider.set_value(clamped_top)
         self.config.band_margin_left = clamped_left
         self.config.band_margin_top = clamped_top
+        # set_value no emite senales: sin esto la vista previa se quedaba en la primera posicion del arrastre
+        self._trigger_preview_render()
+
+    def _on_subtitle_dragged(self, new_left: float, new_top: float) -> None:
+        """El usuario arrastra el subtitulo en la vista previa: su esquina superior izquierda queda en
+        `subtitle_x/y` (dentro del lienzo) y deja de seguir a la posicion del combo."""
+        layout = self._build_subtitle_layout()
+        if layout is None:
+            return
+        canvas, rect = self.config.canvas, layout.rect
+        # a pixeles enteros: un borde de 2 px que cae entre dos pixeles sale difuso
+        self.config.subtitle_x = float(min(max(0, round(new_left)), max(0, canvas.width - rect.width)))
+        self.config.subtitle_y = float(min(max(0, round(new_top)), max(0, canvas.height - rect.height)))
+        self._update_subtitle_reset_button()
+        self._trigger_preview_render()
+
+    def _on_subtitle_reset_position_clicked(self) -> None:
+        self.config.subtitle_x = self.config.subtitle_y = None
+        self._update_subtitle_reset_button()
+        self._schedule_preview_update()
+
+    def _update_subtitle_reset_button(self) -> None:
+        self.subtitle_reset_position_btn.setEnabled(self.config.subtitle_x is not None)
 
     # ------------------------------------------------------------------
     # Medicion de texto y generacion

@@ -175,7 +175,8 @@ def item_to_dict(item: Annotation) -> dict:
                 "glow_color": item.glow_color, "frame_style": item.frame_style.value,
                 "source_color": item.source_color, "source_width": item.source_width,
                 "source_style": item.source_style.value, "connector_color": item.connector_color,
-                "connector_width": item.connector_width, "connector_style": item.connector_style.value}
+                "connector_width": item.connector_width, "connector_style": item.connector_style.value,
+                "connector_glow": item.connector_glow}
     if isinstance(item, Highlight):
         return {"type": "highlight", "id": item.id, "rect": _rect_to_list(item.rect), "color": item.color,
                 "mode": item.mode.value, "opacity": item.opacity, "radius": item.radius}
@@ -235,6 +236,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _color_or_none(data.get("connector_color")),
                 _number_or_none(data.get("connector_width"), MIN_LENS_PART_WIDTH, MAX_LENS_PART_WIDTH),
                 _enum_or_default(LineStyle, data.get("connector_style"), LineStyle.SOLID),
+                data.get("connector_glow") is True,
             )
         if kind == "highlight":
             return Highlight(

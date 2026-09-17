@@ -41,6 +41,12 @@ def config_from_dict(data: dict) -> CoverConfig:
         kwargs["vertical_position"] = VerticalPosition(kwargs["vertical_position"])
     if "font_weight" in kwargs:
         kwargs["font_weight"] = FontWeight(kwargs["font_weight"])
+    for key in ("subtitle_x", "subtitle_y"):
+        value = kwargs.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            kwargs["subtitle_x"] = kwargs["subtitle_y"] = None   # dato danado: posicion automatica
+    if (kwargs.get("subtitle_x") is None) != (kwargs.get("subtitle_y") is None):
+        kwargs["subtitle_x"] = kwargs["subtitle_y"] = None       # van juntas: si falta una, ninguna
     if "subtitle_position" in kwargs:
         try:
             kwargs["subtitle_position"] = SubtitlePosition(kwargs["subtitle_position"])

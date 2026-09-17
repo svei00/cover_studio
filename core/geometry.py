@@ -107,6 +107,10 @@ class CoverConfig:
     subtitle_border_color: str = "#2F80D6"
     subtitle_border_width: float = 2.0       # px; 0 = sin borde
     subtitle_font_size: float = 36.0
+    # esquina superior izquierda elegida arrastrando el subtitulo en la vista previa (px del lienzo);
+    # None = la que da `subtitle_position`. Van juntas.
+    subtitle_x: float | None = None
+    subtitle_y: float | None = None
 
 
 # Subtitulo: las medidas que dependen del lienzo se dan para un ancho de 1584 px y escalan con el ancho real.
@@ -164,13 +168,16 @@ def compute_subtitle_layout(config: CoverConfig, text: str, measure: MeasureFn) 
     width = max(measure(line, font_size) for line in lines) + 2 * pad_x
     height = len(lines) * SUBTITLE_LINE_HEIGHT * font_size + 2 * pad_y
     width = min(width, canvas.width - 2 * margin)
-    if config.subtitle_position is SubtitlePosition.BOTTOM_LEFT:
-        x = margin
-    elif config.subtitle_position is SubtitlePosition.BOTTOM_CENTER:
-        x = (canvas.width - width) / 2
+    if config.subtitle_x is not None and config.subtitle_y is not None:
+        x, y = config.subtitle_x, config.subtitle_y          # puesto a mano
     else:
-        x = canvas.width - margin - width
-    y = canvas.height - margin - height
+        if config.subtitle_position is SubtitlePosition.BOTTOM_LEFT:
+            x = margin
+        elif config.subtitle_position is SubtitlePosition.BOTTOM_CENTER:
+            x = (canvas.width - width) / 2
+        else:
+            x = canvas.width - margin - width
+        y = canvas.height - margin - height
     x = min(max(0.0, x), max(0.0, canvas.width - width))   # nunca fuera del lienzo
     y = min(max(0.0, y), max(0.0, canvas.height - height))
     radius = min(height / 2, SUBTITLE_RADIUS * font_size)
