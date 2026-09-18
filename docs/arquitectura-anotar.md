@@ -515,3 +515,28 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   quedaba en la primera posicion y la zona "agarrable" (calculada con la imagen vieja) no coincidia: el titulo
   parecia trabado. Ahora ambos manejadores llaman a `_trigger_preview_render()` (el render coalesce los pedidos).
   `tests/test_cover_drag.py` lo cubre con renders reales en el hilo.
+
+### Portada: subtitulo con degradado, contorno del texto y coordenadas
+
+- `CoverConfig` suma `subtitle_gradient` (apagado), `subtitle_bg_color2` (`#3182DF`, el azul de acento de la marca),
+  `subtitle_gradient_direction` (`GradientDirection`: horizontal, vertical, diagonal), `subtitle_outline_enabled`
+  (apagado) y `subtitle_outline_color` (`#B38E5D`, el del titulo). Presets viejos abren con los defaults; en
+  `config_from_dict` un color que no sea `#RRGGBB`, un booleano que no sea booleano o una direccion desconocida usan
+  el valor de siempre.
+- Degradado: UN `linearGradient` (`subtitleGradient`) de dos colores, del `subtitle_bg_color` al `bg_color2`, con el
+  vector (0,0)-(1,0) / (0,0)-(0,1) / (0,0)-(1,1) segun la direccion. Rellena el rectangulo con
+  `fill="url(#subtitleGradient)"` y la `fill-opacity` del fondo aplica a los dos colores; el borde y el texto siguen
+  al 100 %. Es bicolor por ahora; para mas colores bastaria con que el modelo pase a una lista de paradas.
+  Boton "Colores de marca (banda -> acento)": primer color = color de la banda, segundo = el del acento.
+- Contorno del texto: `stroke` + `paint-order="stroke fill"` con el grosor automatico del titulo
+  (`max(2, tamano * 0.02)`), `stroke-linejoin="round"`. Es independiente del "Grosor del contorno", que es el borde
+  de la franja.
+- Coordenadas: X / Y (esquina superior izquierda de la franja, px del lienzo) y cuatro botones de flecha que la
+  mueven de a N px (por defecto 10; derecha + abajo = diagonal). Siempre muestran donde esta la franja (automatica,
+  arrastrada o escrita: `_sync_subtitle_position_spins`), con limites dinamicos para que no salga del lienzo, y se
+  apagan sin texto de subtitulo. Escribirlas fija `subtitle_x/y` (se guardan en el preset). Los numeros de varios
+  digitos se aplican al terminar de teclear (`keyboardTracking` apagado). Los botones reutilizan
+  `_on_subtitle_dragged` (redondeo a px enteros y limite al lienzo).
+- Maquetacion: las filas nuevas hicieron el panel izquierdo mas ancho que su zona y se recortaba por la derecha; los
+  botones de flecha son de 30 px y el panel tiene ancho minimo 490 (maximo 540). El test compara el ancho del grupo
+  Subtitulo contra el de los demas grupos (un numero fijo cambia con las fuentes de cada plataforma).

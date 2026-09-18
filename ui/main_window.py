@@ -39,6 +39,7 @@ from core.geometry import (
     CoverConfig,
     FontWeight,
     GeometryError,
+    GradientDirection,
     Orientation,
     SubtitleLayout,
     SubtitlePosition,
@@ -79,6 +80,12 @@ SUBTITLE_POSITION_LABELS: dict[SubtitlePosition, str] = {
     SubtitlePosition.BOTTOM_RIGHT: "Abajo-derecha",
     SubtitlePosition.BOTTOM_LEFT: "Abajo-izquierda",
     SubtitlePosition.BOTTOM_CENTER: "Abajo-centro",
+}
+
+GRADIENT_DIRECTION_LABELS: dict[GradientDirection, str] = {
+    GradientDirection.HORIZONTAL: "Horizontal (izq. a der.)",
+    GradientDirection.VERTICAL: "Vertical (arriba a abajo)",
+    GradientDirection.DIAGONAL: "Diagonal",
 }
 
 VERTICAL_LABELS: dict[VerticalPosition, str] = {
@@ -135,6 +142,7 @@ class MainWindow(QMainWindow):
         self.photo_path: Path | None = None
         self.output_manually_edited = False
         self.last_output_path: Path | None = None
+        self._syncing_subtitle_position = False
 
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
@@ -198,6 +206,11 @@ class MainWindow(QMainWindow):
             self.subtitle_border_color_picker.colorChanged,
             self.subtitle_border_slider.valueChanged,
             self.subtitle_font_slider.valueChanged,
+            self.subtitle_outline_checkbox.toggled,
+            self.subtitle_outline_color_picker.colorChanged,
+            self.subtitle_gradient_checkbox.toggled,
+            self.subtitle_bg_color2_picker.colorChanged,
+            self.subtitle_gradient_direction_combo.currentIndexChanged,
             self.band_color_picker.colorChanged,
             self.accent_color_picker.colorChanged,
             self.text_color_picker.colorChanged,
@@ -250,8 +263,8 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumWidth(420)
-        scroll.setMaximumWidth(480)
+        scroll.setMinimumWidth(490)   # el grupo Subtitulo (coordenadas y botones) pide ~460 px sin barra horizontal
+        scroll.setMaximumWidth(540)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -322,13 +335,91 @@ class MainWindow(QMainWindow):
         self.subtitle_reset_position_btn.clicked.connect(self._on_subtitle_reset_position_clicked)
         layout.addWidget(self.subtitle_reset_position_btn)
 
+        # coordenadas exactas (esquina superior izquierda, en px del lienzo): se anotan y se repiten
+        self.subtitle_x_spin = QSpinBox()
+        self.subtitle_y_spin = QSpinBox()
+        coords = QWidget()
+        coords_layout = QHBoxLayout(coords)
+        coords_layout.setContentsMargins(0, 0, 0, 0)
+        for text, spin in (("X", self.subtitle_x_spin), ("Y", self.subtitle_y_spin)):
+            spin.setRange(0, 0)
+            spin.setSuffix(" px")
+            spin.setKeyboardTracking(False)   # al teclear una cifra de varios digitos, se aplica al terminar
+            spin.setEnabled(False)
+            coords_layout.addWidget(QLabel(text))
+            coords_layout.addWidget(spin, stretch=1)
+        self.subtitle_x_spin.setToolTip("Distancia de la esquina izquierda de la franja al borde izquierdo del lienzo")
+        self.subtitle_y_spin.setToolTip("Distancia del borde superior de la franja al borde superior del lienzo")
+        self.subtitle_x_spin.valueChanged.connect(self._on_subtitle_coordinate_edited)
+        self.subtitle_y_spin.valueChanged.connect(self._on_subtitle_coordinate_edited)
+        layout.addWidget(_row("Posicion exacta", coords))
+
+        self.subtitle_step_spin = QSpinBox()
+        self.subtitle_step_spin.setRange(1, 500)
+        self.subtitle_step_spin.setValue(10)
+        self.subtitle_step_spin.setSuffix(" px")
+        nudge = QWidget()
+        nudge_layout = QHBoxLayout(nudge)
+        nudge_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtitle_nudge_buttons: dict[str, QPushButton] = {}
+        for key, symbol, tip, dx, dy in (
+            ("left", "\u2190", "izquierda", -1, 0), ("right", "\u2192", "derecha", 1, 0),
+            ("up", "\u2191", "arriba", 0, -1), ("down", "\u2193", "abajo", 0, 1),
+        ):
+            button = QPushButton(symbol)
+            button.setToolTip(f"Mover el subtitulo hacia {tip}")
+            button.setFixedWidth(30)   # compactos: cuatro botones de ancho normal no caben en el panel
+            button.setEnabled(False)
+            button.clicked.connect(lambda _checked=False, ax=dx, ay=dy: self._nudge_subtitle(ax, ay))
+            self.subtitle_nudge_buttons[key] = button
+            nudge_layout.addWidget(button)
+        nudge_layout.addWidget(QLabel("de a"))
+        self.subtitle_step_spin.setMaximumWidth(92)
+        nudge_layout.addWidget(self.subtitle_step_spin)
+        nudge_layout.addStretch(1)
+        layout.addWidget(_row("Mover", nudge))
+
         self.subtitle_text_color_picker = ColorPickerButton(self.config.subtitle_text_color)
         self.subtitle_text_color_picker.colorChanged.connect(self._on_subtitle_text_color_changed)
         layout.addWidget(_row("Color del texto", self.subtitle_text_color_picker))
 
+        outline_row = QWidget()
+        outline_layout = QHBoxLayout(outline_row)
+        outline_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtitle_outline_checkbox = QCheckBox("Contorno del texto")
+        self.subtitle_outline_checkbox.toggled.connect(self._on_subtitle_outline_toggled)
+        self.subtitle_outline_color_picker = ColorPickerButton(self.config.subtitle_outline_color)
+        self.subtitle_outline_color_picker.colorChanged.connect(self._on_subtitle_outline_color_changed)
+        self.subtitle_outline_color_picker.setEnabled(False)
+        outline_layout.addWidget(self.subtitle_outline_checkbox)
+        outline_layout.addWidget(self.subtitle_outline_color_picker, stretch=1)
+        layout.addWidget(outline_row)
+
         self.subtitle_bg_color_picker = ColorPickerButton(self.config.subtitle_bg_color)
         self.subtitle_bg_color_picker.colorChanged.connect(self._on_subtitle_bg_color_changed)
         layout.addWidget(_row("Color de fondo", self.subtitle_bg_color_picker))
+
+        # degradado de dos colores (por ahora bicolor): del color de fondo al segundo color
+        self.subtitle_gradient_checkbox = QCheckBox("Degradado de dos colores")
+        self.subtitle_gradient_checkbox.toggled.connect(self._on_subtitle_gradient_toggled)
+        layout.addWidget(self.subtitle_gradient_checkbox)
+        self.subtitle_gradient_panel = QWidget()
+        gradient_layout = QVBoxLayout(self.subtitle_gradient_panel)
+        gradient_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtitle_bg_color2_picker = ColorPickerButton(self.config.subtitle_bg_color2)
+        self.subtitle_bg_color2_picker.colorChanged.connect(self._on_subtitle_bg_color2_changed)
+        gradient_layout.addWidget(_row("Segundo color", self.subtitle_bg_color2_picker))
+        self.subtitle_gradient_direction_combo = QComboBox()
+        for direction, label in GRADIENT_DIRECTION_LABELS.items():
+            self.subtitle_gradient_direction_combo.addItem(label, direction)
+        self.subtitle_gradient_direction_combo.currentIndexChanged.connect(self._on_subtitle_gradient_direction_changed)
+        gradient_layout.addWidget(_row("Direccion", self.subtitle_gradient_direction_combo))
+        self.subtitle_brand_btn = QPushButton("Colores de marca (banda \u2192 acento)")
+        self.subtitle_brand_btn.setToolTip("Usa el color de la banda como primero y el del acento como segundo")
+        self.subtitle_brand_btn.clicked.connect(self._on_subtitle_brand_gradient_clicked)
+        gradient_layout.addWidget(self.subtitle_brand_btn)
+        self.subtitle_gradient_panel.setVisible(False)
+        layout.addWidget(self.subtitle_gradient_panel)
 
         self.subtitle_opacity_slider = SliderSpinBox(
             0, 100, round(self.config.subtitle_bg_opacity * 100), suffix="%"
@@ -625,10 +716,18 @@ class MainWindow(QMainWindow):
         self.subtitle_border_color_picker.set_hex_color(config.subtitle_border_color)
         self.subtitle_border_slider.set_value(config.subtitle_border_width)
         self.subtitle_font_slider.set_value(config.subtitle_font_size)
+        self.subtitle_outline_checkbox.setChecked(config.subtitle_outline_enabled)
+        self.subtitle_outline_color_picker.set_hex_color(config.subtitle_outline_color)
+        self.subtitle_outline_color_picker.setEnabled(config.subtitle_outline_enabled)
+        self.subtitle_gradient_checkbox.setChecked(config.subtitle_gradient)
+        self.subtitle_gradient_panel.setVisible(config.subtitle_gradient)
+        self.subtitle_bg_color2_picker.set_hex_color(config.subtitle_bg_color2)
+        self._select_combo_data(self.subtitle_gradient_direction_combo, config.subtitle_gradient_direction)
 
         self.save_svg_checkbox.setChecked(config.save_svg_alongside)
         self.config = config
         self._update_subtitle_reset_button()
+        self._sync_subtitle_position_spins()
 
     @staticmethod
     def _select_combo_data(combo: QComboBox, data) -> None:
@@ -927,8 +1026,11 @@ class MainWindow(QMainWindow):
         """Reinicia el debounce de 250 ms; el render real ocurre en
         _trigger_preview_render cuando el usuario deja de tocar controles."""
         self._preview_timer.start()
+        if hasattr(self, "subtitle_x_spin"):
+            self._sync_subtitle_position_spins()
 
     def _trigger_preview_render(self) -> None:
+        self._sync_subtitle_position_spins()   # los numeros X / Y siguen a la franja (arrastre, texto, tamano...)
         title = self.title_edit.toPlainText().strip()
         if not title:
             return
@@ -989,9 +1091,73 @@ class MainWindow(QMainWindow):
         self._update_subtitle_reset_button()
         self._trigger_preview_render()
 
+    # --- degradado y contorno del texto -------------------------------------------------------
+
+    def _on_subtitle_gradient_toggled(self, checked: bool) -> None:
+        self.config.subtitle_gradient = checked
+        self.subtitle_gradient_panel.setVisible(checked)
+
+    def _on_subtitle_bg_color2_changed(self, hex_color: str) -> None:
+        self.config.subtitle_bg_color2 = hex_color
+
+    def _on_subtitle_gradient_direction_changed(self, _index: int) -> None:
+        self.config.subtitle_gradient_direction = GradientDirection(self.subtitle_gradient_direction_combo.currentData())
+
+    def _on_subtitle_brand_gradient_clicked(self) -> None:
+        """Del verde de la banda al azul del acento: los colores de la identidad de la portada."""
+        self.subtitle_gradient_checkbox.setChecked(True)
+        self.subtitle_bg_color_picker.set_hex_color(self.config.band_color)
+        self.subtitle_bg_color2_picker.set_hex_color(self.config.accent_color)
+
+    def _on_subtitle_outline_toggled(self, checked: bool) -> None:
+        self.config.subtitle_outline_enabled = checked
+        self.subtitle_outline_color_picker.setEnabled(checked)
+
+    def _on_subtitle_outline_color_changed(self, hex_color: str) -> None:
+        self.config.subtitle_outline_color = hex_color
+
+    # --- coordenadas exactas y empujes ----------------------------------------------------------
+
+    def _sync_subtitle_position_spins(self) -> None:
+        """Muestra en X / Y donde esta ahora la franja (sea automatica, arrastrada o escrita) y ajusta los
+        limites para que no se pueda sacar del lienzo. Sin texto de subtitulo no hay franja: se apagan."""
+        layout = self._build_subtitle_layout()
+        has_layout = layout is not None
+        for widget in (self.subtitle_x_spin, self.subtitle_y_spin, *self.subtitle_nudge_buttons.values()):
+            widget.setEnabled(has_layout)
+        if layout is None:
+            return
+        canvas, rect = self.config.canvas, layout.rect
+        self._syncing_subtitle_position = True
+        try:
+            self.subtitle_x_spin.setRange(0, max(0, int(canvas.width - rect.width)))
+            self.subtitle_y_spin.setRange(0, max(0, int(canvas.height - rect.height)))
+            self.subtitle_x_spin.setValue(round(rect.x))
+            self.subtitle_y_spin.setValue(round(rect.y))
+        finally:
+            self._syncing_subtitle_position = False
+
+    def _on_subtitle_coordinate_edited(self, _value: int) -> None:
+        """El usuario escribio X o Y: la franja queda en esas coordenadas (el otro eje, donde ya estaba)."""
+        if self._syncing_subtitle_position:
+            return
+        self.config.subtitle_x = float(self.subtitle_x_spin.value())
+        self.config.subtitle_y = float(self.subtitle_y_spin.value())
+        self._update_subtitle_reset_button()
+        self._trigger_preview_render()
+
+    def _nudge_subtitle(self, dx: int, dy: int) -> None:
+        """Mueve la franja `dx`, `dy` pasos de N px desde donde esta (en diagonal si se combinan)."""
+        layout = self._build_subtitle_layout()
+        if layout is None:
+            return
+        step = self.subtitle_step_spin.value()
+        self._on_subtitle_dragged(round(layout.rect.x) + dx * step, round(layout.rect.y) + dy * step)
+
     def _on_subtitle_reset_position_clicked(self) -> None:
         self.config.subtitle_x = self.config.subtitle_y = None
         self._update_subtitle_reset_button()
+        self._sync_subtitle_position_spins()
         self._schedule_preview_update()
 
     def _update_subtitle_reset_button(self) -> None:

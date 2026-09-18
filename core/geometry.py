@@ -41,6 +41,12 @@ class SubtitlePosition(str, Enum):
     BOTTOM_CENTER = "bottom-center"
 
 
+class GradientDirection(str, Enum):
+    HORIZONTAL = "horizontal"   # del color 1 (izquierda) al color 2 (derecha)
+    VERTICAL = "vertical"       # del color 1 (arriba) al color 2 (abajo)
+    DIAGONAL = "diagonal"       # de la esquina superior izquierda a la inferior derecha
+
+
 class FontWeight(str, Enum):
     NORMAL = "normal"
     BOLD = "bold"
@@ -111,6 +117,14 @@ class CoverConfig:
     # None = la que da `subtitle_position`. Van juntas.
     subtitle_x: float | None = None
     subtitle_y: float | None = None
+    # Degradado de dos colores en el relleno de la franja: del `subtitle_bg_color` al `subtitle_bg_color2`
+    # (por defecto, el azul de acento de la marca). La opacidad del fondo aplica a todo el degradado.
+    subtitle_gradient: bool = False
+    subtitle_bg_color2: str = "#3182DF"
+    subtitle_gradient_direction: GradientDirection = GradientDirection.HORIZONTAL
+    # Contorno de las letras, como el "Contorno del texto" del titulo (mismos colores y grosor automatico)
+    subtitle_outline_enabled: bool = False
+    subtitle_outline_color: str = "#B38E5D"
 
 
 # Subtitulo: las medidas que dependen del lienzo se dan para un ancho de 1584 px y escalan con el ancho real.
@@ -403,6 +417,14 @@ def build_svg(
     return "\n".join(svg)
 
 
+# vector (x1, y1, x2, y2) del degradado, en fracciones de la caja de la franja
+_GRADIENT_VECTORS: dict[GradientDirection, tuple[int, int, int, int]] = {
+    GradientDirection.HORIZONTAL: (0, 0, 1, 0),
+    GradientDirection.VERTICAL: (0, 0, 0, 1),
+    GradientDirection.DIAGONAL: (0, 0, 1, 1),
+}
+
+
 def _subtitle_svg(config: CoverConfig, subtitle: SubtitleLayout) -> list[str]:
     """Franja redondeada del subtitulo y su texto. UN solo rectangulo (sin capa doble ni sombra). La opacidad
     es solo del relleno; el borde y el texto se dibujan al 100 %. El borde se dibuja hacia adentro de la caja
@@ -413,17 +435,34 @@ def _subtitle_svg(config: CoverConfig, subtitle: SubtitleLayout) -> list[str]:
     inset = border / 2
     rx = max(0.0, subtitle.radius - inset)
     stroke = f' stroke="{config.subtitle_border_color}" stroke-width="{border:.2f}"' if border > 0 else ""
-    parts = [
+    parts: list[str] = []
+    fill = config.subtitle_bg_color
+    if config.subtitle_gradient:
+        x1, y1, x2, y2 = _GRADIENT_VECTORS[config.subtitle_gradient_direction]
+        parts.append(
+            f'<defs><linearGradient id="subtitleGradient" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">'
+            f'<stop offset="0" stop-color="{config.subtitle_bg_color}"/>'
+            f'<stop offset="1" stop-color="{config.subtitle_bg_color2}"/></linearGradient></defs>'
+        )
+        fill = "url(#subtitleGradient)"
+    parts.append(
         f'<rect x="{rect.x + inset:.2f}" y="{rect.y + inset:.2f}" width="{rect.width - border:.2f}" '
-        f'height="{rect.height - border:.2f}" rx="{rx:.2f}" fill="{config.subtitle_bg_color}" '
+        f'height="{rect.height - border:.2f}" rx="{rx:.2f}" fill="{fill}" '
         f'fill-opacity="{opacity:.2f}"{stroke}/>'
-    ]
+    )
     weight_css = _FONT_WEIGHT_CSS[config.font_weight]
+    outline_attrs = ""
+    if config.subtitle_outline_enabled:
+        outline_width = max(2.0, subtitle.font_size * 0.02)   # la misma regla del contorno del titulo
+        outline_attrs = (
+            f' stroke="{config.subtitle_outline_color}" stroke-width="{outline_width:.2f}" '
+            f'stroke-linejoin="round" paint-order="stroke fill"'
+        )
     for line, x, y in layout_text_lines(subtitle.lines, rect, subtitle.font_size, SUBTITLE_LINE_HEIGHT):
         parts.append(
             f'<text x="{x:.2f}" y="{y:.2f}" text-anchor="middle" dominant-baseline="central" '
             f'font-family="{escape_xml(config.font_family)}" font-size="{subtitle.font_size:.2f}" '
-            f'font-weight="{weight_css}" fill="{config.subtitle_text_color}">{escape_xml(line)}</text>'
+            f'font-weight="{weight_css}" fill="{config.subtitle_text_color}"{outline_attrs}>{escape_xml(line)}</text>'
         )
     return parts
 

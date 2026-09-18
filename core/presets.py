@@ -4,14 +4,26 @@ JSON. El titulo y las rutas de foto/salida no forman parte del preset."""
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from core.geometry import CanvasSize, CoverConfig, FontWeight, Orientation, SubtitlePosition, VerticalPosition
+from core.geometry import (
+    CanvasSize,
+    CoverConfig,
+    FontWeight,
+    GradientDirection,
+    Orientation,
+    SubtitlePosition,
+    VerticalPosition,
+)
 
 
 class PresetError(Exception):
     """Error leyendo o escribiendo un archivo de preset."""
+
+
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 def config_to_dict(config: CoverConfig) -> dict:
@@ -22,6 +34,7 @@ def config_to_dict(config: CoverConfig) -> dict:
     data["vertical_position"] = config.vertical_position.value
     data["font_weight"] = config.font_weight.value
     data["subtitle_position"] = config.subtitle_position.value
+    data["subtitle_gradient_direction"] = config.subtitle_gradient_direction.value
     return data
 
 
@@ -47,6 +60,17 @@ def config_from_dict(data: dict) -> CoverConfig:
             kwargs["subtitle_x"] = kwargs["subtitle_y"] = None   # dato danado: posicion automatica
     if (kwargs.get("subtitle_x") is None) != (kwargs.get("subtitle_y") is None):
         kwargs["subtitle_x"] = kwargs["subtitle_y"] = None       # van juntas: si falta una, ninguna
+    for key in ("subtitle_bg_color2", "subtitle_outline_color"):   # un color danado usa el de siempre
+        if key in kwargs and not (isinstance(kwargs[key], str) and _HEX_RE.fullmatch(kwargs[key])):
+            del kwargs[key]
+    for key in ("subtitle_gradient", "subtitle_outline_enabled"):
+        if key in kwargs and not isinstance(kwargs[key], bool):
+            del kwargs[key]
+    if "subtitle_gradient_direction" in kwargs:
+        try:
+            kwargs["subtitle_gradient_direction"] = GradientDirection(kwargs["subtitle_gradient_direction"])
+        except ValueError:
+            del kwargs["subtitle_gradient_direction"]
     if "subtitle_position" in kwargs:
         try:
             kwargs["subtitle_position"] = SubtitlePosition(kwargs["subtitle_position"])
