@@ -209,6 +209,8 @@ class MainWindow(QMainWindow):
             self.subtitle_outline_checkbox.toggled,
             self.subtitle_outline_color_picker.colorChanged,
             self.subtitle_gradient_checkbox.toggled,
+            self.subtitle_border_gradient_checkbox.toggled,
+            self.subtitle_border_color2_picker.colorChanged,
             self.subtitle_bg_color2_picker.colorChanged,
             self.subtitle_gradient_direction_combo.currentIndexChanged,
             self.band_color_picker.colorChanged,
@@ -399,8 +401,8 @@ class MainWindow(QMainWindow):
         self.subtitle_bg_color_picker.colorChanged.connect(self._on_subtitle_bg_color_changed)
         layout.addWidget(_row("Color de fondo", self.subtitle_bg_color_picker))
 
-        # degradado de dos colores (por ahora bicolor): del color de fondo al segundo color
-        self.subtitle_gradient_checkbox = QCheckBox("Degradado de dos colores")
+        # degradado de dos colores del RELLENO (por ahora bicolor): del color de fondo al segundo color
+        self.subtitle_gradient_checkbox = QCheckBox("Degradado en el relleno")
         self.subtitle_gradient_checkbox.toggled.connect(self._on_subtitle_gradient_toggled)
         layout.addWidget(self.subtitle_gradient_checkbox)
         self.subtitle_gradient_panel = QWidget()
@@ -409,15 +411,6 @@ class MainWindow(QMainWindow):
         self.subtitle_bg_color2_picker = ColorPickerButton(self.config.subtitle_bg_color2)
         self.subtitle_bg_color2_picker.colorChanged.connect(self._on_subtitle_bg_color2_changed)
         gradient_layout.addWidget(_row("Segundo color", self.subtitle_bg_color2_picker))
-        self.subtitle_gradient_direction_combo = QComboBox()
-        for direction, label in GRADIENT_DIRECTION_LABELS.items():
-            self.subtitle_gradient_direction_combo.addItem(label, direction)
-        self.subtitle_gradient_direction_combo.currentIndexChanged.connect(self._on_subtitle_gradient_direction_changed)
-        gradient_layout.addWidget(_row("Direccion", self.subtitle_gradient_direction_combo))
-        self.subtitle_brand_btn = QPushButton("Colores de marca (banda \u2192 acento)")
-        self.subtitle_brand_btn.setToolTip("Usa el color de la banda como primero y el del acento como segundo")
-        self.subtitle_brand_btn.clicked.connect(self._on_subtitle_brand_gradient_clicked)
-        gradient_layout.addWidget(self.subtitle_brand_btn)
         self.subtitle_gradient_panel.setVisible(False)
         layout.addWidget(self.subtitle_gradient_panel)
 
@@ -432,12 +425,43 @@ class MainWindow(QMainWindow):
         self.subtitle_border_color_picker.colorChanged.connect(self._on_subtitle_border_color_changed)
         layout.addWidget(_row("Color del borde", self.subtitle_border_color_picker))
 
+        # degradado de dos colores del BORDE: del color del borde al segundo color
+        self.subtitle_border_gradient_checkbox = QCheckBox("Degradado en el borde")
+        self.subtitle_border_gradient_checkbox.toggled.connect(self._on_subtitle_border_gradient_toggled)
+        layout.addWidget(self.subtitle_border_gradient_checkbox)
+        self.subtitle_border_gradient_panel = QWidget()
+        border_gradient_layout = QVBoxLayout(self.subtitle_border_gradient_panel)
+        border_gradient_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtitle_border_color2_picker = ColorPickerButton(self.config.subtitle_border_color2)
+        self.subtitle_border_color2_picker.colorChanged.connect(self._on_subtitle_border_color2_changed)
+        border_gradient_layout.addWidget(_row("Segundo color", self.subtitle_border_color2_picker))
+        self.subtitle_border_gradient_panel.setVisible(False)
+        layout.addWidget(self.subtitle_border_gradient_panel)
+
         self.subtitle_border_slider = SliderSpinBox(
             0, MAX_SUBTITLE_BORDER, self.config.subtitle_border_width, step=0.5, suffix=" px", scale=10
         )
         self.subtitle_border_slider.setToolTip("0 = sin borde")
         self.subtitle_border_slider.valueChanged.connect(self._on_subtitle_border_width_changed)
         layout.addWidget(_row("Grosor del contorno", self.subtitle_border_slider))
+
+        # controles comunes del degradado (relleno y borde): solo se ven si alguno esta encendido
+        self.subtitle_gradient_common_panel = QWidget()
+        common_layout = QVBoxLayout(self.subtitle_gradient_common_panel)
+        common_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtitle_gradient_direction_combo = QComboBox()
+        for direction, label in GRADIENT_DIRECTION_LABELS.items():
+            self.subtitle_gradient_direction_combo.addItem(label, direction)
+        self.subtitle_gradient_direction_combo.currentIndexChanged.connect(self._on_subtitle_gradient_direction_changed)
+        common_layout.addWidget(_row("Direccion", self.subtitle_gradient_direction_combo))
+        self.subtitle_brand_btn = QPushButton("Colores de marca (banda / acento)")
+        self.subtitle_brand_btn.setToolTip(
+            "Relleno: del color de la banda al del acento. Borde: del acento a la banda (al reves, para que se distinga)"
+        )
+        self.subtitle_brand_btn.clicked.connect(self._on_subtitle_brand_gradient_clicked)
+        common_layout.addWidget(self.subtitle_brand_btn)
+        self.subtitle_gradient_common_panel.setVisible(False)
+        layout.addWidget(self.subtitle_gradient_common_panel)
 
         self.subtitle_font_slider = SliderSpinBox(12, 120, self.config.subtitle_font_size, suffix=" px")
         self.subtitle_font_slider.valueChanged.connect(self._on_subtitle_font_size_changed)
@@ -722,7 +746,11 @@ class MainWindow(QMainWindow):
         self.subtitle_gradient_checkbox.setChecked(config.subtitle_gradient)
         self.subtitle_gradient_panel.setVisible(config.subtitle_gradient)
         self.subtitle_bg_color2_picker.set_hex_color(config.subtitle_bg_color2)
+        self.subtitle_border_gradient_checkbox.setChecked(config.subtitle_border_gradient)
+        self.subtitle_border_gradient_panel.setVisible(config.subtitle_border_gradient)
+        self.subtitle_border_color2_picker.set_hex_color(config.subtitle_border_color2)
         self._select_combo_data(self.subtitle_gradient_direction_combo, config.subtitle_gradient_direction)
+        self.subtitle_gradient_common_panel.setVisible(config.subtitle_gradient or config.subtitle_border_gradient)
 
         self.save_svg_checkbox.setChecked(config.save_svg_alongside)
         self.config = config
@@ -1096,6 +1124,21 @@ class MainWindow(QMainWindow):
     def _on_subtitle_gradient_toggled(self, checked: bool) -> None:
         self.config.subtitle_gradient = checked
         self.subtitle_gradient_panel.setVisible(checked)
+        self._update_subtitle_gradient_common_visibility()
+
+    def _on_subtitle_border_gradient_toggled(self, checked: bool) -> None:
+        self.config.subtitle_border_gradient = checked
+        self.subtitle_border_gradient_panel.setVisible(checked)
+        self._update_subtitle_gradient_common_visibility()
+
+    def _on_subtitle_border_color2_changed(self, hex_color: str) -> None:
+        self.config.subtitle_border_color2 = hex_color
+
+    def _update_subtitle_gradient_common_visibility(self) -> None:
+        """La direccion y el boton de colores de marca sirven a los dos degradados: se ven si alguno esta activo."""
+        self.subtitle_gradient_common_panel.setVisible(
+            self.subtitle_gradient_checkbox.isChecked() or self.subtitle_border_gradient_checkbox.isChecked()
+        )
 
     def _on_subtitle_bg_color2_changed(self, hex_color: str) -> None:
         self.config.subtitle_bg_color2 = hex_color
@@ -1104,10 +1147,21 @@ class MainWindow(QMainWindow):
         self.config.subtitle_gradient_direction = GradientDirection(self.subtitle_gradient_direction_combo.currentData())
 
     def _on_subtitle_brand_gradient_clicked(self) -> None:
-        """Del verde de la banda al azul del acento: los colores de la identidad de la portada."""
-        self.subtitle_gradient_checkbox.setChecked(True)
-        self.subtitle_bg_color_picker.set_hex_color(self.config.band_color)
-        self.subtitle_bg_color2_picker.set_hex_color(self.config.accent_color)
+        """Los colores de la identidad de la portada. Relleno: del verde de la banda al azul del acento. Borde: del
+        azul al verde (al reves, para que el borde se distinga del relleno). Se aplica a los degradados que estan
+        encendidos; si no hay ninguno, enciende los dos."""
+        fill_on = self.subtitle_gradient_checkbox.isChecked()
+        border_on = self.subtitle_border_gradient_checkbox.isChecked()
+        if not fill_on and not border_on:
+            fill_on = border_on = True
+        if fill_on:
+            self.subtitle_gradient_checkbox.setChecked(True)
+            self.subtitle_bg_color_picker.set_hex_color(self.config.band_color)
+            self.subtitle_bg_color2_picker.set_hex_color(self.config.accent_color)
+        if border_on:
+            self.subtitle_border_gradient_checkbox.setChecked(True)
+            self.subtitle_border_color_picker.set_hex_color(self.config.accent_color)
+            self.subtitle_border_color2_picker.set_hex_color(self.config.band_color)
 
     def _on_subtitle_outline_toggled(self, checked: bool) -> None:
         self.config.subtitle_outline_enabled = checked

@@ -122,6 +122,11 @@ class CoverConfig:
     subtitle_gradient: bool = False
     subtitle_bg_color2: str = "#3182DF"
     subtitle_gradient_direction: GradientDirection = GradientDirection.HORIZONTAL
+    # Degradado de dos colores en el BORDE de la franja: del `subtitle_border_color` al `subtitle_border_color2`
+    # (por defecto, el verde de la banda: azul -> verde, al reves del relleno para que el borde se distinga).
+    # Usa la misma direccion que el degradado del relleno.
+    subtitle_border_gradient: bool = False
+    subtitle_border_color2: str = "#21B868"
     # Contorno de las letras, como el "Contorno del texto" del titulo (mismos colores y grosor automatico)
     subtitle_outline_enabled: bool = False
     subtitle_outline_color: str = "#B38E5D"
@@ -434,17 +439,26 @@ def _subtitle_svg(config: CoverConfig, subtitle: SubtitleLayout) -> list[str]:
     opacity = min(max(config.subtitle_bg_opacity, 0.0), 1.0)
     inset = border / 2
     rx = max(0.0, subtitle.radius - inset)
-    stroke = f' stroke="{config.subtitle_border_color}" stroke-width="{border:.2f}"' if border > 0 else ""
-    parts: list[str] = []
+    x1, y1, x2, y2 = _GRADIENT_VECTORS[config.subtitle_gradient_direction]
+    gradients: list[str] = []
+
+    def gradient(gradient_id: str, color1: str, color2: str) -> str:
+        gradients.append(
+            f'<linearGradient id="{gradient_id}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">'
+            f'<stop offset="0" stop-color="{color1}"/><stop offset="1" stop-color="{color2}"/></linearGradient>'
+        )
+        return f"url(#{gradient_id})"
+
     fill = config.subtitle_bg_color
     if config.subtitle_gradient:
-        x1, y1, x2, y2 = _GRADIENT_VECTORS[config.subtitle_gradient_direction]
-        parts.append(
-            f'<defs><linearGradient id="subtitleGradient" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">'
-            f'<stop offset="0" stop-color="{config.subtitle_bg_color}"/>'
-            f'<stop offset="1" stop-color="{config.subtitle_bg_color2}"/></linearGradient></defs>'
-        )
-        fill = "url(#subtitleGradient)"
+        fill = gradient("subtitleGradient", config.subtitle_bg_color, config.subtitle_bg_color2)
+    border_paint = config.subtitle_border_color
+    if config.subtitle_border_gradient and border > 0:
+        border_paint = gradient("subtitleBorderGradient", config.subtitle_border_color, config.subtitle_border_color2)
+    stroke = f' stroke="{border_paint}" stroke-width="{border:.2f}"' if border > 0 else ""
+    parts: list[str] = []
+    if gradients:
+        parts.append("<defs>" + "".join(gradients) + "</defs>")
     parts.append(
         f'<rect x="{rect.x + inset:.2f}" y="{rect.y + inset:.2f}" width="{rect.width - border:.2f}" '
         f'height="{rect.height - border:.2f}" rx="{rx:.2f}" fill="{fill}" '

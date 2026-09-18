@@ -60,10 +60,10 @@ def config_from_dict(data: dict) -> CoverConfig:
             kwargs["subtitle_x"] = kwargs["subtitle_y"] = None   # dato danado: posicion automatica
     if (kwargs.get("subtitle_x") is None) != (kwargs.get("subtitle_y") is None):
         kwargs["subtitle_x"] = kwargs["subtitle_y"] = None       # van juntas: si falta una, ninguna
-    for key in ("subtitle_bg_color2", "subtitle_outline_color"):   # un color danado usa el de siempre
+    for key in ("subtitle_bg_color2", "subtitle_border_color2", "subtitle_outline_color"):   # un color danado usa el de siempre
         if key in kwargs and not (isinstance(kwargs[key], str) and _HEX_RE.fullmatch(kwargs[key])):
             del kwargs[key]
-    for key in ("subtitle_gradient", "subtitle_outline_enabled"):
+    for key in ("subtitle_gradient", "subtitle_border_gradient", "subtitle_outline_enabled"):
         if key in kwargs and not isinstance(kwargs[key], bool):
             del kwargs[key]
     if "subtitle_gradient_direction" in kwargs:

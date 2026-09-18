@@ -3,9 +3,10 @@ sincronizado con spinbox."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+import sys
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QColorDialog,
     QDoubleSpinBox,
@@ -16,6 +17,53 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QWidget,
 )
+
+from core.user_settings import MAX_CUSTOM_COLORS, UserSettingsError, load_custom_colors, save_custom_colors
+
+# Los "colores personalizados" del selector de Qt viven solo en memoria: sin esto se pierden al cerrar la app.
+# Se restauran desde un JSON en la carpeta de datos del usuario la primera vez que se abre el selector en la
+# sesion y se guardan al cerrarlo (ver core/user_settings.py).
+_custom_colors_restored = False
+_custom_colors_saved: list[str] | None = None
+
+
+def _current_custom_colors() -> list[str]:
+    return [QColorDialog.customColor(i).name() for i in range(min(QColorDialog.customCount(), MAX_CUSTOM_COLORS))]
+
+
+def restore_custom_colors() -> None:
+    """Pone en el selector de color los colores personalizados guardados (una sola vez por sesion)."""
+    global _custom_colors_restored, _custom_colors_saved
+    if _custom_colors_restored:
+        return
+    _custom_colors_restored = True
+    for index, color in enumerate(load_custom_colors()[: QColorDialog.customCount()]):
+        if color:
+            QColorDialog.setCustomColor(index, QColor(color))
+    _custom_colors_saved = _current_custom_colors()
+
+
+def persist_custom_colors() -> bool:
+    """Guarda en disco los colores personalizados actuales si cambiaron desde la ultima vez. Si no se puede
+    escribir (carpeta de solo lectura, disco lleno) avisa por stderr y sigue: un color no vale cerrar la app."""
+    global _custom_colors_saved
+    current = _current_custom_colors()
+    if current == _custom_colors_saved:
+        return True
+    try:
+        save_custom_colors(current)
+    except UserSettingsError as exc:
+        print(f"Aviso: {exc}", file=sys.stderr)
+        return False
+    _custom_colors_saved = current
+    return True
+
+
+def _reset_custom_colors_state() -> None:
+    """Solo para pruebas: olvida que ya se restauraron / guardaron los colores en esta sesion."""
+    global _custom_colors_restored, _custom_colors_saved
+    _custom_colors_restored = False
+    _custom_colors_saved = None
 
 
 class ColorPickerButton(QWidget):
@@ -60,7 +108,9 @@ class ColorPickerButton(QWidget):
         self._hex_label.setText(self._hex.upper())
 
     def _on_swatch_clicked(self, _event) -> None:
+        restore_custom_colors()
         color = QColorDialog.getColor(QColor(self._hex), self, "Elegir color")
+        persist_custom_colors()   # tambien al cancelar: "Agregar a personalizados" cuenta aunque se cierre sin elegir
         if color.isValid():
             self.set_hex_color(color.name())
 

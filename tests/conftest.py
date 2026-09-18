@@ -17,3 +17,10 @@ def _sin_dialogos_modales(monkeypatch):
     except ImportError:  # PySide6 no instalado: las pruebas de UI se omiten solas
         return
     monkeypatch.setattr(AnnotateTab, "_ask_discard", lambda self: "discard")
+
+
+@pytest.fixture(autouse=True)
+def _datos_de_usuario_aislados(monkeypatch, tmp_path):
+    """Las pruebas nunca deben leer ni escribir la carpeta de datos REAL del usuario (la carpeta Cover Studio dentro de APPDATA):
+    cada prueba usa una carpeta temporal propia."""
+    monkeypatch.setenv("COVER_STUDIO_HOME", str(tmp_path / "datos-de-usuario"))

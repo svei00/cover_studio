@@ -540,3 +540,38 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Maquetacion: las filas nuevas hicieron el panel izquierdo mas ancho que su zona y se recortaba por la derecha; los
   botones de flecha son de 30 px y el panel tiene ancho minimo 490 (maximo 540). El test compara el ancho del grupo
   Subtitulo contra el de los demas grupos (un numero fijo cambia con las fuentes de cada plataforma).
+
+### Colores personalizados que se guardan entre sesiones
+
+- Bug (no causado por los cambios del proyecto): el selector de color de Qt guarda los "colores personalizados" solo
+  en memoria (16 espacios que arrancan en blanco en cada sesion) y la app no los guardaba en ningun lado. En Windows
+  este Qt usa su propio dialogo, no el nativo, asi que `QColorDialog.setCustomColor` / `customColor` mandan.
+- `core/user_settings.py` (sin Qt): guarda los 16 espacios en `custom_colors.json` dentro de la carpeta de datos del
+  USUARIO (`%APPDATA%\Cover Studio`; `$XDG_CONFIG_HOME/cover-studio` fuera de Windows; la variable
+  `COVER_STUDIO_HOME` la cambia). Escritura atomica (temporal + `os.replace`), tolerante a archivos danados (vacios, a
+  medias, tipos raros: cada espacio invalido queda vacio y nunca impide abrir la app) y con `UserSettingsError` clara.
+- `ui/widgets.py`: `restore_custom_colors()` (una vez por sesion, al abrir el selector por primera vez) y
+  `persist_custom_colors()` (al cerrar el dialogo, tambien al cancelar, solo si cambio algo; un fallo al escribir
+  avisa por stderr y sigue). `tests/conftest.py` aisla `COVER_STUDIO_HOME` en cada prueba: las pruebas nunca tocan el
+  APPDATA real. Cambiar de equipo: basta copiar ese JSON.
+
+### Portada: degradado en el borde del subtitulo
+
+- `CoverConfig.subtitle_border_gradient` (apagado) y `subtitle_border_color2` (`#21B868`, el verde de la banda): el
+  borde va de `subtitle_border_color` a `subtitle_border_color2` con su PROPIO `linearGradient`
+  (`subtitleBorderGradient`), independiente del del relleno, y usa la misma direccion (horizontal, vertical o
+  diagonal). Sigue al 100 % de opacidad. Con grosor 0 no se emite. Si ambos estan encendidos hay dos gradientes en un
+  solo `<defs>`.
+- Interfaz: "Degradado en el relleno" y "Degradado en el borde", cada uno con su segundo color; la direccion y el
+  boton "Colores de marca (banda / acento)" son comunes y solo se ven si alguno esta encendido. El boton pone el
+  relleno de la banda al acento y el borde del acento a la banda (al reves, para que el borde se distinga); solo
+  toca lo que esta encendido y, si no hay nada, enciende los dos.
+
+### Pendiente (fase futura): colores de marca configurables
+
+- Hoy los colores de marca estan fijos en el codigo: Portada en los defaults de `CoverConfig` (banda `#21B868`,
+  acento `#3182DF`, texto `#F1EBDF`...) y `presets/default.json`; Anotar en `core/annotate/style.py` y
+  `palette.BRAND_PALETTE`. Para usar la herramienta en otra marca o venderla, la idea es UN archivo de marca (p. ej.
+  `brand.json`, con nombre de la marca y colores con nombre) que alimente los defaults de las dos pestanas, el boton
+  "Restaurar colores de marca" y el degradado del subtitulo. La infraestructura de datos de usuario de
+  `core/user_settings.py` ya sirve de base.
