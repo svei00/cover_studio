@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from core.annotate.crop import normalize_crop
+from core.annotate.freehand import MAX_POINTS
 from core.annotate.errors import AnnotateError
 from core.annotate.palette import is_valid_hex, palette_from_dict, palette_to_dict
 from core.annotate.style import (
@@ -19,6 +20,7 @@ from core.annotate.style import (
     MAX_LENS_PART_WIDTH,
     MAX_LINE_WIDTH,
     MAX_NUMBER_SIZE,
+    MAX_PEN_WIDTH,
     MAX_STEP_SIZE,
     MAX_STEP_STROKE,
     MARKER_STROKE,
@@ -26,8 +28,10 @@ from core.annotate.style import (
     MIN_LENS_PART_WIDTH,
     MIN_LINE_WIDTH,
     MIN_NUMBER_SIZE,
+    MIN_PEN_WIDTH,
     MIN_STEP_SIZE,
     MIN_STEP_STROKE,
+    PEN_WIDTH,
     STEP_RADIUS,
     STEP_STROKE,
 )
@@ -43,10 +47,12 @@ from core.annotate.model import (
     LineStyle,
     Magnifier,
     Marker,
+    PenMode,
     Rect,
     Redaction,
     StepBadge,
     StepShape,
+    Stroke,
     TextAlign,
     TextLabel,
 )
@@ -84,6 +90,20 @@ def _custom_arrow(start: object, tip: object) -> tuple[tuple[float, float] | Non
     flecha vuelve a ser automatica (los dos van juntos)."""
     a, b = _point_or_none(start), _point_or_none(tip)
     return (a, b) if a is not None and b is not None else (None, None)
+
+
+def _stroke_points(value: object) -> tuple[tuple[float, float], ...]:
+    """Puntos de un trazo guardado: una lista de [x, y]. Un trazo sin puntos validos no se puede dibujar: es un
+    proyecto danado (TypeError/ValueError lo convierte en AnnotateError)."""
+    if not isinstance(value, list) or not value or len(value) > MAX_POINTS:
+        raise ValueError("puntos del trazo ausentes o demasiados")
+    points = []
+    for pair in value:
+        if (not isinstance(pair, (list, tuple)) or len(pair) != 2
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in pair)):
+            raise TypeError("punto invalido")
+        points.append((float(pair[0]), float(pair[1])))
+    return tuple(points)
 
 
 def _number_or_default(value: object, low: float, high: float, default: float) -> float:
@@ -177,6 +197,10 @@ def item_to_dict(item: Annotation) -> dict:
                 "source_style": item.source_style.value, "connector_color": item.connector_color,
                 "connector_width": item.connector_width, "connector_style": item.connector_style.value,
                 "connector_glow": item.connector_glow}
+    if isinstance(item, Stroke):
+        return {"type": "stroke", "id": item.id, "points": [[x, y] for x, y in item.points], "color": item.color,
+                "mode": item.mode.value, "width": item.width, "opacity": item.opacity, "glow": item.glow,
+                "glow_color": item.glow_color}
     if isinstance(item, Highlight):
         return {"type": "highlight", "id": item.id, "rect": _rect_to_list(item.rect), "color": item.color,
                 "mode": item.mode.value, "opacity": item.opacity, "radius": item.radius}
@@ -237,6 +261,14 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_none(data.get("connector_width"), MIN_LENS_PART_WIDTH, MAX_LENS_PART_WIDTH),
                 _enum_or_default(LineStyle, data.get("connector_style"), LineStyle.SOLID),
                 data.get("connector_glow") is True,
+            )
+        if kind == "stroke":
+            return Stroke(
+                data["id"], _stroke_points(data["points"]), _color_or_none(data.get("color")),
+                _enum_or_default(PenMode, data.get("mode"), PenMode.PEN),
+                _number_or_default(data.get("width"), MIN_PEN_WIDTH, MAX_PEN_WIDTH, PEN_WIDTH),
+                _number_or_default(data.get("opacity"), 0.0, 1.0, 1.0),
+                data.get("glow") is True, _color_or_none(data.get("glow_color")),
             )
         if kind == "highlight":
             return Highlight(

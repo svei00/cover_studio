@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 
+from core.annotate import freehand
 from core.annotate.model import Annotation, AnnotationDoc, Rect, TextLabel
 from core.annotate.primitives import (
     PCircle,
@@ -13,6 +14,7 @@ from core.annotate.primitives import (
     PImage,
     PLine,
     PPolygon,
+    PPolyline,
     PRect,
     Primitive,
     doc_scale,
@@ -25,6 +27,9 @@ def primitive_bounds(p: Primitive) -> Rect | None:
     """Caja que ocupa una primitiva incluyendo el grosor de su trazo (el texto no cuenta)."""
     if isinstance(p, PRect):
         return p.rect.inflate(p.width / 2) if p.stroke else p.rect
+    if isinstance(p, PPolyline):
+        x, y, w, h = freehand.bounding_box(p.points)
+        return Rect(x, y, w, h).inflate(p.width / 2)
     if isinstance(p, PLine):
         xs, ys = (p.a[0], p.b[0]), (p.a[1], p.b[1])
         return Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)).inflate(p.width / 2)

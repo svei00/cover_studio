@@ -16,6 +16,7 @@ from core.annotate.style import (
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
     MARKER_STROKE,
+    PEN_WIDTH,
     STEP_RADIUS,
     STEP_STROKE,
     TAN,
@@ -48,6 +49,12 @@ class HeadStyle(str, Enum):
     NONE = "none"
     ARROW = "arrow"
     DOT = "dot"
+
+
+class PenMode(str, Enum):
+    PEN = "pen"           # lapiz: trazo opaco
+    MARKER = "marker"     # resaltador: multiplica con lo de abajo, el texto negro sigue negro (fondos claros)
+    OVERLAY = "overlay"   # resaltador translucido: color normal con transparencia, se ve en fondos oscuros
 
 
 class StepShape(str, Enum):
@@ -231,7 +238,23 @@ class Highlight:
     radius: float = HIGHLIGHT_RADIUS
 
 
-Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight
+@dataclass(frozen=True)
+class Stroke:
+    """Trazo a mano alzada (lapiz o resaltador). `points` son los puntos de CONTROL ya suavizados y simplificados
+    (core.annotate.freehand); al dibujar se unen con una curva. Color None = el de la paleta (lapiz) o el del
+    resaltador. `opacity` es de todo el trazo."""
+
+    id: str
+    points: tuple[tuple[float, float], ...]
+    color: str | None = None
+    mode: PenMode = PenMode.PEN
+    width: float = PEN_WIDTH            # grosor a escala 1
+    opacity: float = 1.0
+    glow: bool = False
+    glow_color: str | None = None
+
+
+Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight | Stroke
 
 
 @dataclass

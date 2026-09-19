@@ -9,7 +9,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from core.annotate import lens, style
+from core.annotate import freehand, lens, style
 from core.annotate.palette import BRAND_PALETTE, Palette
 from core.annotate.model import (
     Annotation,
@@ -23,9 +23,11 @@ from core.annotate.model import (
     LineStyle,
     Magnifier,
     Marker,
+    PenMode,
     Rect,
     StepBadge,
     StepShape,
+    Stroke,
     TextAlign,
     TextLabel,
 )
@@ -120,7 +122,18 @@ class PText:
     opacity: float = 1.0
 
 
-Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage
+@dataclass(frozen=True)
+class PPolyline:
+    """Polilinea abierta de trazo redondo (el trazo a mano alzada). `blend` 'multiply' = resaltador."""
+
+    points: tuple[Point, ...]
+    stroke: str
+    width: float
+    opacity: float = 1.0
+    blend: str | None = None
+
+
+Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage | PPolyline
 
 
 # --------------------------------------------------------------------------
@@ -363,6 +376,31 @@ def step_primitives(s: StepBadge, scale: float, palette: Palette = BRAND_PALETTE
     return out
 
 
+def stroke_curve(s: Stroke) -> tuple[Point, ...]:
+    """La polilinea que se dibuja de un trazo (curva por sus puntos de control). Un trazo de un solo punto
+    es un punto: se dibuja como un segmento diminuto para que el remate redondo lo pinte."""
+    curve = freehand.flatten(s.points)
+    if len(curve) == 1:
+        curve = [curve[0], (curve[0][0] + 0.01, curve[0][1])]
+    return tuple(curve)
+
+
+def stroke_primitives(s: Stroke, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
+    if not s.points:
+        return []
+    color = s.color or (palette.pen if s.mode is PenMode.PEN else palette.highlight)
+    curve = stroke_curve(s)
+    width = s.width * scale
+    out: list[Primitive] = []
+    if s.glow:
+        # el mismo halo en capas que el conector de la lupa: de la mas ancha y tenue a la mas angosta
+        glow_color = s.glow_color or palette.glow
+        for off, op in reversed(style.GLOW_RINGS):
+            out.append(PPolyline(curve, glow_color, width + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH))
+    out.append(PPolyline(curve, color, width, s.opacity, "multiply" if s.mode is PenMode.MARKER else None))
+    return out
+
+
 def highlight_primitives(h: Highlight, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
     blend = "multiply" if h.mode is HighlightMode.MARKER else None
     return [
@@ -517,6 +555,8 @@ def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[
         return magnifier_primitives(item, scale, doc.palette)
     if isinstance(item, Highlight):
         return highlight_primitives(item, scale, doc.palette)
+    if isinstance(item, Stroke):
+        return stroke_primitives(item, scale, doc.palette)
     return []
 
 

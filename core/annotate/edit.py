@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from enum import Enum
 
-from core.annotate import lens, style
+from core.annotate import freehand, lens, style
 from core.annotate.model import (
     Annotation,
     Arrow,
@@ -22,9 +22,10 @@ from core.annotate.model import (
     Redaction,
     StepBadge,
     StepShape,
+    Stroke,
     TextLabel,
 )
-from core.annotate.primitives import label_box, step_extent
+from core.annotate.primitives import label_box, step_extent, stroke_curve
 
 Point = tuple[float, float]
 
@@ -108,6 +109,8 @@ def hit_item(
         return _contains(item.rect.inflate(tol), p)
     if isinstance(item, Highlight):
         return _contains(item.rect.inflate(tol / 2), p)
+    if isinstance(item, Stroke):
+        return freehand.distance_to_polyline(p, stroke_curve(item)) <= item.width * scale / 2 + tol
     if isinstance(item, Arrow):
         return distance_to_segment(p, item.start, item.end) <= tol
     if isinstance(item, StepBadge):
@@ -171,6 +174,8 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
         return handles
     if isinstance(item, (Redaction, Highlight)):
         return rect_handles(item.rect)
+    if isinstance(item, Stroke):
+        return rect_handles(_stroke_box(item)) if item.points else {}
     if isinstance(item, Magnifier):
         handles = rect_handles(lens.effective_source(item))
         box = lens.lens_rect(item)
@@ -191,8 +196,16 @@ def hit_handle(item: Annotation, p: Point, tol: float, arrows: Arrows | None = N
     return best[1] if best else None
 
 
+def _stroke_box(s: Stroke) -> Rect:
+    """Caja de los puntos de control de un trazo (sin su grosor): de ella salen las asas de escalado."""
+    x, y, w, h = freehand.bounding_box(s.points)
+    return Rect(x, y, w, h)
+
+
 def selection_rect(item: Annotation, scale: float) -> Rect:
     """Caja que se dibuja alrededor de la anotacion seleccionada."""
+    if isinstance(item, Stroke):
+        return _stroke_box(item).inflate(item.width * scale / 2) if item.points else Rect(0, 0, 0, 0)
     if isinstance(item, (Marker, Redaction, Highlight)):
         return item.rect
     if isinstance(item, Arrow):
@@ -271,6 +284,8 @@ def move_item(
     if isinstance(item, (Redaction, Highlight)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
+    if isinstance(item, Stroke):
+        return replace(item, points=tuple((x + dx, y + dy) for x, y in item.points))
     if isinstance(item, Arrow):
         return replace(
             item,
@@ -290,6 +305,8 @@ def resize_item(
     """Mueve el asa al punto. Los rectangulos nunca bajan de min_size; si se
     arrastra el asa mas alla del lado opuesto, se queda en min_size. En un marcador, START y
     END mueven la cola o la punta de su flecha (la otra punta se queda donde estaba)."""
+    if isinstance(item, Stroke):
+        return _resize_stroke(item, handle, p, min_size)
     if isinstance(item, Marker) and handle in (Handle.START, Handle.END):
         arrow = (arrows or {}).get(item.id)
         if arrow is None:
@@ -311,6 +328,17 @@ def resize_item(
     if not isinstance(item, (Marker, Redaction, Highlight)):
         return item
     return replace(item, rect=resize_rect(item.rect, handle, p, min_size))
+
+
+def _resize_stroke(s: Stroke, handle: Handle, p: Point, min_size: float) -> Stroke:
+    """Escala los puntos del trazo: su caja pasa de la actual a la que da mover el asa (el grosor no cambia)."""
+    if not s.points:
+        return s
+    old = _stroke_box(s)
+    new = resize_rect(old, handle, p, min_size)
+    sx = new.w / old.w if old.w > 1e-9 else 1.0
+    sy = new.h / old.h if old.h > 1e-9 else 1.0
+    return replace(s, points=tuple(((x - old.x) * sx + new.x, (y - old.y) * sy + new.y) for x, y in s.points))
 
 
 def _resize_lens(m: Magnifier, handle: Handle, p: Point, min_size: float) -> Magnifier:
