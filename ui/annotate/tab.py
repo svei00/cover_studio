@@ -32,7 +32,7 @@ from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
 from core.annotate.model import AnnotationDoc, Magnifier, Redaction
 from core.annotate.primitives import build_primitives
-from core.annotate.raster import apply_redactions, lens_crops, load_image
+from core.annotate.raster import active_spotlight, apply_redactions, apply_spotlight, lens_crops, load_image
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
@@ -61,9 +61,12 @@ TOOL_BUTTONS = (
     (Tool.HIGHLIGHT, "Resaltar", "Resaltador: pinta una zona (texto, celdas) con un color translucido; arrastra sobre ella"),
     (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
     (Tool.LINE, "Linea", "Linea recta (sirve de conector): arrastra del inicio al final; las puntas y el estilo se eligen en el panel"),
+    (Tool.PEN, "Lapiz", "Dibuja a mano alzada: mantén el boton y arrastra. El trazo se suaviza solo al soltar"),
+    (Tool.PEN_MARKER, "Resaltador libre", "Resalta a mano alzada con un trazo ancho que deja ver (y leer) lo de abajo"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
     (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
+    (Tool.FOCUS, "Foco", "Oscurece o desenfoca todo menos una zona (solo un foco por captura). El desenfoque NO oculta datos: usa Pixelar"),
     (Tool.LENS, "Lupa", "Amplia una zona en un lente aparte: arrastra sobre lo que quieres ampliar"),
     (Tool.CROP, "Recortar", "Recorta la captura: arrastra lo que se queda; se puede deshacer y no toca el original"),
 )
@@ -112,6 +115,7 @@ class AnnotateTab(QWidget):
         self._base_key: tuple | None = None
         self._base_qimage: QImage | None = None
         self._redacted: Image.Image | None = None
+        self._spot_key: object = None
         self._lens_cache: dict[str, tuple[tuple, QImage]] = {}
 
         tools = FlowLayout()   # si no caben en una fila, bajan a la siguiente (la ventana no se ensancha)
@@ -361,6 +365,7 @@ class AnnotateTab(QWidget):
         self.base_image = image
         self.doc = doc
         self._base_key = None
+        self._spot_key = None
         self.canvas.reset_view()   # otra captura: se empieza ajustada
         self.export_btn.setEnabled(True)
         for button in self.tool_buttons.values():
@@ -378,11 +383,16 @@ class AnnotateTab(QWidget):
             return
         # el bitmap pixelado solo se recalcula si cambiaron los pixelados
         key = tuple(i for i in self.doc.items if isinstance(i, Redaction))
+        spot_key = active_spotlight(self.doc.items)
         if key != self._base_key or self._base_qimage is None or self._redacted is None:
             self._redacted = apply_redactions(self.base_image, self.doc.items)
-            self._base_qimage = pil_to_qimage(self._redacted)
             self._base_key = key
+            self._spot_key = object()   # el foco se aplica sobre el bitmap pixelado: hay que rehacerlo
             self._lens_cache.clear()
+        if spot_key != self._spot_key or self._base_qimage is None:
+            # el foco solo afecta al fondo: las lupas se siguen recortando de la imagen pixelada, sin foco
+            self._base_qimage = pil_to_qimage(apply_spotlight(self._redacted, self.doc.items))
+            self._spot_key = spot_key
         self.canvas.set_content(
             self._base_qimage, build_primitives(self.doc), self._lens_images(), self.doc.padding, self.doc.crop
         )

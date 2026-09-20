@@ -65,6 +65,12 @@ PEN_MARKER_WIDTH = 22.0
 MIN_PEN_WIDTH = 1.0
 MAX_PEN_WIDTH = 80.0
 
+# Foco: lo de FUERA de la zona se oscurece y/o se desenfoca (se aplica al bitmap, no es una primitiva)
+FOCUS_DIM = 0.55          # opacidad del oscurecido por defecto
+MAX_FOCUS_DIM = 0.95
+MAX_FOCUS_BLUR = 60.0     # radio maximo del desenfoque, en px de la captura
+MAX_FOCUS_CORNER = 200.0
+
 STEP_RADIUS = 20.0
 STEP_STROKE = 2.5
 STEP_FONT_SIZE = 17.0

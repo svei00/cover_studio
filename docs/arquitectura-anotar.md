@@ -580,3 +580,46 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 
 - `Magnifier.shape` por defecto es `LensShape.ROUNDED` (rectangular; era circular) y el restablecer de "Forma" del
   panel vuelve a ella. Solo cambia la lupa NUEVA: los proyectos guardados traen su forma explicita y abren igual.
+
+### Lapiz y resaltador libre (trazo a mano alzada)
+
+- **Modelo**: `Stroke(id, points, color, mode, width, opacity, glow, glow_color)`; `PenMode` = `PEN` (opaco),
+  `MARKER` (`multiply`, para capturas claras: el texto negro sigue legible) y `OVERLAY` (translucido, para oscuras),
+  igual que `HighlightMode`. Dos botones (Lapiz / Resaltador libre) crean el trazo; el modo se cambia en el panel.
+- **Captura del gesto** (`controller.py`): se acumulan los puntos crudos del mouse (separacion minima, tope
+  `MAX_LIVE_POINTS`) y se ve en vivo. AL SOLTAR, `freehand.process` los reduce: `decimate` (<=1500) -> suavizado
+  Chaikin (2 pasadas) -> Ramer-Douglas-Peucker iterativo (tolerancia 0.8 px). Un circulo dibujado con ~700 puntos
+  queda en unas decenas, con error radial < 1.6 px. El gesto completo es UN paso de deshacer; un clic o temblor
+  (longitud < 3 px) no deja trazo.
+- **Dibujo**: se guardan solo los puntos de control; la curva (Catmull-Rom centripeta, `freehand.flatten`) la calculan
+  `primitives.stroke_primitives` para los DOS pintores (Qt en pantalla y SVG->resvg al exportar) mediante `PPolyline`,
+  asi coinciden pixel a pixel (hay tests de paridad). El resplandor son 9 polilineas apiladas, como el del conector.
+- **Edicion** (`edit.py`): seleccion por distancia a la curva (<= grosor/2 + tolerancia), 8 tiradores de la caja de los
+  puntos de control, mover y redimensionar (escala los puntos; tolera cajas de ancho/alto cero).
+- **Proyecto** (`io.py`): `{"type":"stroke","points":[[x,y],...],...}`; puntos invalidos o mas de `MAX_POINTS` =
+  proyecto danado (`AnnotateError`); modo/grosor/opacidad ausentes caen a sus valores por defecto.
+- **Panel**: pagina propia (`_PAGE_STROKE`) con modo, color (por defecto el de la paleta: `pen` o `highlight`),
+  grosor, opacidad y resplandor. Cambiar de modo es un solo paso: ajusta la opacidad y, al pasar entre lapiz y
+  resaltador, el grosor (entre los dos resaltadores se conserva).
+- Nota visual: el color de marca del lapiz (`#621132`) casi no se ve sobre capturas OSCURAS; ahi conviene cambiar el
+  color del trazo (mismo comportamiento que flechas y recuadros).
+
+### Foco (oscurecer / desenfocar todo menos una zona)
+
+- **Modelo**: `Spotlight(id, rect, dim=0.55, blur=0.0, corner=0.0)`. `dim` (0..0.95) es la opacidad del negro que cubre
+  el fondo, `blur` el radio del desenfoque gaussiano (px de la captura) y `corner` el radio de las esquinas de la zona.
+  Oscurecer y desenfocar son independientes (se puede usar uno, el otro o los dos). Con `dim` y `blur` en 0 no hace nada.
+- **Es del BITMAP, no una primitiva** (como el pixelado): `raster.apply_spotlight`. Orden del pipeline: captura ->
+  pixelado (`apply_redactions`) -> recortes de las lupas (`lens_crops`, de la imagen SIN foco) -> foco -> anotaciones
+  (por encima). Asi un dato pixelado sigue pixelado bajo el foco, las lupas salen claras (que es justo para lo que
+  sirve oscurecer el fondo) y las anotaciones no quedan tapadas. Lo usan `svg.build_svg` (exportar/copiar) y
+  `AnnotateTab.refresh` (vista previa; el foco se rehace solo si cambia el foco o un pixelado).
+- **Uno por documento**: `raster.active_spotlight` toma el ULTIMO. El controlador (`_commit_spotlight`) hace que dibujar
+  un foco nuevo reemplace al anterior en UN solo paso de deshacer (macro Quitar+Agregar); un arrastre minusculo no
+  reemplaza nada. No es una herramienta pegajosa (`STICKY_TOOLS`): tras dibujar vuelve a Seleccionar.
+- **Seleccion**: solo el BORDE de la zona responde al clic (si no, un foco grande taparia todo lo de debajo); el
+  interior solo lo selecciona cuando no hay nada mas ahi. Tiene los 8 tiradores, mover y teclas de flecha.
+- **Proyecto**: `{"type":"focus","rect":[...],"dim","blur","corner"}`; valores ausentes o fuera de rango caen a los de
+  fabrica; sin `rect` es un proyecto danado.
+- **Advertencia (UI)**: el panel y el tooltip dicen que desenfocar NO oculta datos confidenciales (un desenfoque se
+  puede deshacer parcialmente); para anonimizar esta Pixelar.

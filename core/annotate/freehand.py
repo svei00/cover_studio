@@ -17,6 +17,7 @@ SIMPLIFY_TOLERANCE = 0.8    # RDP: cuanto puede apartarse la curva simplificada 
 SMOOTH_PASSES = 2           # pasadas de corte de esquinas (Chaikin)
 SAMPLE_SPACING = 2.5        # separacion aproximada de las muestras de la curva al dibujarla (px de la imagen)
 MAX_POINTS = 5000           # tope de puntos de un trazo (un proyecto no debe crecer sin limite)
+MAX_RAW_POINTS = 1500       # tope de puntos crudos al procesar: un garabato larguisimo no debe congelar la ventana
 MIN_STROKE_LENGTH = 3.0     # un trazo mas corto que esto (un clic, un temblor) no se crea
 
 
@@ -27,6 +28,15 @@ def path_length(points: Sequence[Point]) -> float:
 def should_add(points: Sequence[Point], new: Point, spacing: float = MIN_POINT_SPACING) -> bool:
     """True si `new` esta lo bastante lejos del ultimo punto como para agregarlo al trazo en curso."""
     return not points or math.dist(points[-1], new) >= spacing
+
+
+def decimate(points: Sequence[Point], limit: int) -> list[Point]:
+    """Si hay mas de `limit` puntos, se queda con unos cuantos repartidos parejo (siempre el primero y el ultimo)."""
+    n = len(points)
+    if n <= limit or limit < 2:
+        return list(points)
+    step = (n - 1) / (limit - 1)
+    return [points[round(i * step)] for i in range(limit)]
 
 
 def smooth(points: Sequence[Point], passes: int = SMOOTH_PASSES) -> list[Point]:
@@ -81,6 +91,7 @@ def simplify(points: Sequence[Point], tolerance: float = SIMPLIFY_TOLERANCE) -> 
 def process(raw: Sequence[Point], tolerance: float = SIMPLIFY_TOLERANCE) -> tuple[Point, ...]:
     """Puntos crudos del mouse -> puntos de control del trazo (suavizados y simplificados), redondeados a
     centesimas de pixel (lo que se guarda en el proyecto)."""
+    raw = decimate(raw, MAX_RAW_POINTS)
     if len(raw) < 3:
         cleaned = list(raw)
     else:

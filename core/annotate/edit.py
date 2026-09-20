@@ -20,6 +20,7 @@ from core.annotate.model import (
     Marker,
     Rect,
     Redaction,
+    Spotlight,
     StepBadge,
     StepShape,
     Stroke,
@@ -107,6 +108,12 @@ def hit_item(
         return _contains(outer, p) and not _contains(inner, p)
     if isinstance(item, Redaction):
         return _contains(item.rect.inflate(tol), p)
+    if isinstance(item, Spotlight):
+        # solo el borde de la zona: el interior (y todo el fondo) deja pasar el clic a lo que hay debajo
+        r = item.rect
+        if r.w <= 2 * tol or r.h <= 2 * tol:
+            return _contains(r.inflate(tol), p)
+        return _contains(r.inflate(tol), p) and not _contains(r.inflate(-tol), p)
     if isinstance(item, Highlight):
         return _contains(item.rect.inflate(tol / 2), p)
     if isinstance(item, Stroke):
@@ -148,7 +155,7 @@ def hit_test(
         if hit_item(item, p, tol, scale, arrows):
             return item.id
     for item in reversed(items):
-        if isinstance(item, Marker) and _contains(item.rect.inflate(tol), p):
+        if isinstance(item, (Marker, Spotlight)) and _contains(item.rect.inflate(tol), p):
             return item.id
     return None
 
@@ -172,7 +179,7 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
         if arrow is not None:
             handles[Handle.START], handles[Handle.END] = arrow
         return handles
-    if isinstance(item, (Redaction, Highlight)):
+    if isinstance(item, (Redaction, Highlight, Spotlight)):
         return rect_handles(item.rect)
     if isinstance(item, Stroke):
         return rect_handles(_stroke_box(item)) if item.points else {}
@@ -206,7 +213,7 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
     """Caja que se dibuja alrededor de la anotacion seleccionada."""
     if isinstance(item, Stroke):
         return _stroke_box(item).inflate(item.width * scale / 2) if item.points else Rect(0, 0, 0, 0)
-    if isinstance(item, (Marker, Redaction, Highlight)):
+    if isinstance(item, (Marker, Redaction, Highlight, Spotlight)):
         return item.rect
     if isinstance(item, Arrow):
         x0, x1 = sorted((item.start[0], item.end[0]))
@@ -281,7 +288,7 @@ def move_item(
                 arrow_tip=(item.arrow_tip[0] + dx, item.arrow_tip[1] + dy),
             )
         return moved
-    if isinstance(item, (Redaction, Highlight)):
+    if isinstance(item, (Redaction, Highlight, Spotlight)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
     if isinstance(item, Stroke):
@@ -325,7 +332,7 @@ def resize_item(
         return item
     if isinstance(item, Magnifier):
         return _resize_lens(item, handle, p, min_size)
-    if not isinstance(item, (Marker, Redaction, Highlight)):
+    if not isinstance(item, (Marker, Redaction, Highlight, Spotlight)):
         return item
     return replace(item, rect=resize_rect(item.rect, handle, p, min_size))
 

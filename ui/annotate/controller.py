@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
 from core.annotate import crop as cropping
+from core.annotate import freehand
 from core.annotate import edit, lens
 from core.annotate.model import (
     Annotation,
@@ -26,13 +27,17 @@ from core.annotate.model import (
     HeadStyle,
     Magnifier,
     Marker,
+    PenMode,
     Rect,
     Redaction,
+    Spotlight,
     StepBadge,
+    Stroke,
     text_label_from_preset,
 )
 from core.annotate.palette import Palette
 from core.annotate.primitives import doc_scale, item_bounds, marker_arrow
+from core.annotate.style import PEN_MARKER_WIDTH
 
 Point = tuple[float, float]
 
@@ -53,9 +58,12 @@ class Tool(str, Enum):
     HIGHLIGHT = "highlight"
     ARROW = "arrow"
     LINE = "line"
+    PEN = "pen"
+    PEN_MARKER = "pen-marker"
     STEP = "step"
     TEXT = "text"
     REDACT = "redact"
+    FOCUS = "focus"
     LENS = "lens"
     CROP = "crop"
 
@@ -63,8 +71,10 @@ class Tool(str, Enum):
 # Herramientas que se QUEDAN activas tras dibujar (dos recuadros seguidos sin volver a elegirla); se sale con
 # Esc o eligiendo otra. El texto no: abre su editor y lo normal es una sola etiqueta.
 STICKY_TOOLS = frozenset({
-    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.STEP, Tool.REDACT, Tool.LENS,
+    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.PEN, Tool.PEN_MARKER, Tool.STEP,
+    Tool.REDACT, Tool.LENS,
 })
+MAX_LIVE_POINTS = 20000   # puntos del mouse que se guardan mientras se dibuja un trazo (el resto se ignora)
 
 _HANDLE_CURSORS = {
     edit.Handle.NW: Qt.SizeFDiagCursor, edit.Handle.SE: Qt.SizeFDiagCursor,
@@ -189,6 +199,7 @@ class EditController(QObject):
         self._anchor: Point = (0.0, 0.0)
         self.crop_draft: Rect | None = None   # recorte en curso (solo durante el gesto)
         self._press_arrows: dict[str, tuple[Point, Point]] = {}   # flechas de los marcadores al empezar el gesto
+        self._stroke_raw: list[Point] = []   # puntos crudos del mouse del trazo a mano alzada en curso
 
     # ------------------------------------------------------------------
     # Estado
@@ -342,7 +353,10 @@ class EditController(QObject):
             self._press_crop(p, tol)
         elif self.tool is Tool.SELECT:
             self._press_select(p, tol)
-        elif self.tool in (Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.LENS):
+        elif self.tool in (
+            Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.LENS,
+            Tool.PEN, Tool.PEN_MARKER, Tool.FOCUS,
+        ):
             self._begin_create(p)
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
@@ -394,15 +408,37 @@ class EditController(QObject):
         elif self.tool is Tool.REDACT:
             block = max(6, round(DEFAULT_REDACTION_BLOCK * self.scale()))
             item = Redaction(item_id, Rect(p[0], p[1], 0.0, 0.0), block)
+        elif self.tool is Tool.FOCUS:
+            item = Spotlight(item_id, Rect(p[0], p[1], 0.0, 0.0))
         elif self.tool is Tool.LENS:
             item = Magnifier(item_id, Rect(p[0], p[1], 0.0, 0.0), p)
         elif self.tool is Tool.LINE:
             item = Arrow(item_id, p, p, head_end=HeadStyle.NONE)   # una flecha sin puntas
+        elif self.tool is Tool.PEN:
+            item = Stroke(item_id, (p,))
+            self._stroke_raw = [p]
+        elif self.tool is Tool.PEN_MARKER:
+            item = Stroke(item_id, (p,), mode=PenMode.MARKER, width=PEN_MARKER_WIDTH)
+            self._stroke_raw = [p]
         else:
             item = Arrow(item_id, p, p)
         self._insert(item)
         self._mode, self._orig, self._anchor = "create", item, p
         self.select(item_id)
+
+    def _commit_spotlight(self, new: Spotlight) -> None:
+        """Solo hay un foco por documento: el nuevo reemplaza al anterior, y todo es UN paso de deshacer."""
+        assert self.doc is not None
+        previous = [(i, o) for i, o in enumerate(self.doc.items) if isinstance(o, Spotlight) and o.id != new.id]
+        if previous:
+            self.stack.beginMacro("Agregar foco")
+            for index, old in reversed(previous):
+                self.stack.push(_RemoveCommand(self, old, index))
+            self.stack.push(_AddCommand(self, new))
+            self.stack.endMacro()
+        else:
+            self.stack.push(_AddCommand(self, new))
+        self._finish_create()
 
     def _commit_new(self, item: Annotation) -> None:
         self.stack.push(_AddCommand(self, item))
@@ -433,7 +469,12 @@ class EditController(QObject):
         elif self._mode == "resize" and self._handle is not None:
             self._set_item(edit.resize_item(self._orig, self._handle, p, arrows=self._press_arrows))
         elif self._mode == "create":
-            if isinstance(self._orig, Arrow):
+            if isinstance(self._orig, Stroke):
+                # a mano alzada: se acumulan los puntos del mouse (con una separacion minima) y se ve en vivo
+                if len(self._stroke_raw) < MAX_LIVE_POINTS and freehand.should_add(self._stroke_raw, p):
+                    self._stroke_raw.append(p)
+                    self._set_item(replace(self._orig, points=tuple(self._stroke_raw)))
+            elif isinstance(self._orig, Arrow):
                 self._set_item(replace(self._orig, end=p))
             elif isinstance(self._orig, Magnifier):
                 source = edit.rect_from_points(self._anchor, p)
@@ -461,8 +502,15 @@ class EditController(QObject):
                 text = "Mover" if mode == "move" else "Redimensionar"
                 self.stack.push(_ReplaceCommand(self, orig, current, text))
         elif mode == "create":
+            if isinstance(current, Stroke):
+                # al soltar: suavizar y simplificar. Se guardan pocos puntos de control, no cada punto del mouse
+                current = replace(current, points=freehand.process(self._stroke_raw))
+                self._set_item(current)
+                self._stroke_raw = []
             if self._too_small(current):
                 self._remove(orig.id)
+            elif isinstance(current, Spotlight):
+                self._commit_spotlight(current)
             else:
                 self.stack.push(_AddCommand(self, current))
                 self._finish_create()
@@ -473,6 +521,8 @@ class EditController(QObject):
             return abs(item.end[0] - item.start[0]) + abs(item.end[1] - item.start[1]) < MIN_ARROW
         if isinstance(item, Magnifier):
             return item.source.w < MIN_LENS_SOURCE or item.source.h < MIN_LENS_SOURCE
+        if isinstance(item, Stroke):
+            return freehand.path_length(item.points) < freehand.MIN_STROKE_LENGTH   # un clic o un temblor no es un trazo
         rect = item.rect  # Marker, Highlight o Redaction
         return rect.w < MIN_RECT or rect.h < MIN_RECT
 

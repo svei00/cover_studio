@@ -34,8 +34,9 @@ def test_suavizar_conserva_los_extremos_y_quita_el_temblor():
     ruidosa = [(x, 50 + rng.uniform(-2, 2)) for x in range(0, 200, 2)]
     suave = freehand.smooth(ruidosa)
     assert suave[0] == ruidosa[0] and suave[-1] == ruidosa[-1]
-    desviacion = lambda pts: max(abs(y - 50) for _, y in pts[2:-2])  # noqa: E731
-    assert desviacion(suave) < desviacion(ruidosa) * 0.6
+    # aspereza = media de la segunda diferencia (cuanto "zigzaguea" la linea); medida: baja de 2.6 a 0.16
+    aspereza = lambda pts: sum(abs(pts[i + 1][1] - 2 * pts[i][1] + pts[i - 1][1]) for i in range(1, len(pts) - 1)) / (len(pts) - 2)  # noqa: E731
+    assert aspereza(suave) < aspereza(ruidosa) * 0.2
     assert freehand.smooth([(0, 0), (1, 1)]) == [(0, 0), (1, 1)]          # con menos de 3 puntos no hay que suavizar
 
 
@@ -90,7 +91,11 @@ def test_la_curva_pasa_por_los_puntos_de_control_y_es_pareja():
     assert curva[0] == control[0] and curva[-1] == control[-1]
     for c in control:
         assert min(math.dist(c, q) for q in curva) < 0.5
-    assert all(math.dist(a, b) <= freehand.SAMPLE_SPACING * 1.2 for a, b in zip(curva, curva[1:]))
+    assert all(math.dist(a, b) <= freehand.SAMPLE_SPACING * 2 for a, b in zip(curva, curva[1:]))
+    # sin "facetas" visibles: el giro entre segmentos seguidos es chico (medido: 10 grados como maximo)
+    for a, b, c in zip(curva, curva[1:], curva[2:]):
+        v1, v2 = (b[0] - a[0], b[1] - a[1]), (c[0] - b[0], c[1] - b[1])
+        assert abs(math.degrees(math.atan2(v1[0] * v2[1] - v1[1] * v2[0], v1[0] * v2[0] + v1[1] * v2[1]))) < 15
     assert all(math.isfinite(x) and math.isfinite(y) for x, y in curva)
 
 
@@ -320,3 +325,24 @@ def test_un_trazo_de_cientos_de_puntos_pesa_poco_en_el_proyecto():
     crudos = [(300 + 100 * math.cos(math.radians(i / 2)) + rng.uniform(-.8, .8), 300 + 100 * math.sin(math.radians(i / 2))) for i in range(721)]
     t = Stroke("g", freehand.process(crudos))
     assert len(str(item_to_dict(t))) < 1800        # ~700 puntos del mouse caben en unos 1.7 KB de proyecto
+
+
+def test_decimar_conserva_extremos_y_respeta_el_tope():
+    pts = [(float(i), 0.0) for i in range(10000)]
+    d = freehand.decimate(pts, 100)
+    assert len(d) == 100 and d[0] == pts[0] and d[-1] == pts[-1]
+    assert freehand.decimate(pts[:50], 100) == pts[:50] and freehand.decimate(pts, 1) == pts   # sin tope que aplicar
+
+
+def test_un_garabato_larguisimo_no_congela_la_ventana_al_soltar():
+    """Medido: un zigzag patologico de 20000 puntos tardaba 54 s en procesarse (la simplificacion degenera y el
+    suavizado cuadruplica los puntos). Con el tope de puntos crudos tarda centesimas."""
+    rng = random.Random(1)
+    garabato = [(500 + math.cos(i / 40) * 200 + rng.uniform(-3, 3), 400 + math.sin(i / 25) * 150 + rng.uniform(-3, 3)) for i in range(8000)]
+    zigzag = [(i * 0.5, 18 * ((i // 3) % 2)) for i in range(8000)]
+    patologico = [(float(i), (i % 7) * 3.0) for i in range(20000)]
+    inicio = time.perf_counter()
+    for pts in (garabato, zigzag):
+        assert len(freehand.process(pts)) <= freehand.MAX_POINTS
+    assert len(freehand.process(patologico, tolerance=0.0)) <= freehand.MAX_POINTS
+    assert time.perf_counter() - inicio < 3.0

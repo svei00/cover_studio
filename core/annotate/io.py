@@ -19,6 +19,10 @@ from core.annotate.style import (
     MAX_LENS_FRAME_WIDTH,
     MAX_LENS_PART_WIDTH,
     MAX_LINE_WIDTH,
+    FOCUS_DIM,
+    MAX_FOCUS_BLUR,
+    MAX_FOCUS_CORNER,
+    MAX_FOCUS_DIM,
     MAX_NUMBER_SIZE,
     MAX_PEN_WIDTH,
     MAX_STEP_SIZE,
@@ -50,6 +54,7 @@ from core.annotate.model import (
     PenMode,
     Rect,
     Redaction,
+    Spotlight,
     StepBadge,
     StepShape,
     Stroke,
@@ -185,6 +190,9 @@ def item_to_dict(item: Annotation) -> dict:
                 "bg_opacity": item.bg_opacity, "border": item.border,
                 "border_width": item.border_width, "padding": item.padding, "rx": item.rx,
                 "align": item.align.value, "outline": item.outline, "opacity": item.opacity}
+    if isinstance(item, Spotlight):
+        return {"type": "focus", "id": item.id, "rect": _rect_to_list(item.rect), "dim": item.dim,
+                "blur": item.blur, "corner": item.corner}
     if isinstance(item, Redaction):
         return {"type": "redaction", "id": item.id, "rect": _rect_to_list(item.rect), "block": item.block}
     if isinstance(item, Magnifier):
@@ -243,6 +251,13 @@ def item_from_dict(data: dict) -> Annotation:
                 border=data["border"], border_width=data["border_width"], padding=data["padding"],
                 rx=data["rx"], align=TextAlign(data["align"]), outline=data["outline"],
                 opacity=_number_or_default(data.get("opacity"), 0.0, 1.0, 1.0),
+            )
+        if kind == "focus":
+            return Spotlight(
+                data["id"], Rect(*data["rect"]),
+                _number_or_default(data.get("dim"), 0.0, MAX_FOCUS_DIM, FOCUS_DIM),
+                _number_or_default(data.get("blur"), 0.0, MAX_FOCUS_BLUR, 0.0),
+                _number_or_default(data.get("corner"), 0.0, MAX_FOCUS_CORNER, 0.0),
             )
         if kind == "redaction":
             return Redaction(data["id"], Rect(*data["rect"]), data["block"])

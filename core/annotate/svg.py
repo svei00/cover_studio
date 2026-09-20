@@ -25,7 +25,7 @@ from core.annotate.primitives import (
     Primitive,
     build_primitives,
 )
-from core.annotate.raster import apply_redactions, lens_crops, load_image
+from core.annotate.raster import apply_redactions, apply_spotlight, lens_crops, load_image
 from core.geometry import escape_xml, render_png, render_png_bytes
 
 
@@ -200,7 +200,8 @@ def build_svg(doc: AnnotationDoc) -> str:
             f"esperaba {doc.image_size[0]}x{doc.image_size[1]}). Reabre la captura."
         )
     redacted = apply_redactions(image, doc.items)
-    return to_svg(doc, redacted, build_primitives(doc), lens_crops(redacted, doc.items))
+    # las lupas se recortan de la imagen pixelada y SIN foco: el foco solo afecta al fondo
+    return to_svg(doc, apply_spotlight(redacted, doc.items), build_primitives(doc), lens_crops(redacted, doc.items))
 
 
 def _check_not_original(doc: AnnotationDoc, output_path: Path, allow_overwrite: bool) -> None:

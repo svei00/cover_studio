@@ -196,6 +196,19 @@ class Redaction:
 
 
 @dataclass(frozen=True)
+class Spotlight:
+    """Foco: la zona `rect` queda tal cual y TODO lo demas se oscurece (`dim`, 0..1) y/o se desenfoca (`blur`, radio
+    en px). Se aplica al bitmap, despues del pixelado y de los recortes de las lupas, y por debajo de las anotaciones.
+    Solo cuenta uno por documento (el ultimo). El desenfoque NO oculta datos: para eso esta el pixelado."""
+
+    id: str
+    rect: Rect
+    dim: float = 0.55
+    blur: float = 0.0
+    corner: float = 0.0   # esquinas redondeadas de la zona, en px
+
+
+@dataclass(frozen=True)
 class Magnifier:
     """Lupa: amplia `source` (region de la imagen) en un lente aparte centrado en
     `lens_center`. El tamano del lente es el del origen por `zoom`; con forma
@@ -254,7 +267,7 @@ class Stroke:
     glow_color: str | None = None
 
 
-Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight | Stroke
+Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight
 
 
 @dataclass

@@ -39,9 +39,12 @@ from core.annotate.model import (
     LineStyle,
     Magnifier,
     Marker,
+    PenMode,
     Redaction,
+    Spotlight,
     StepBadge,
     StepShape,
+    Stroke,
     TextAlign,
     TextLabel,
 )
@@ -49,6 +52,10 @@ from core.annotate.palette import BRAND_PALETTE, PALETTE_LABELS
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
     CARD_FILL,
+    FOCUS_DIM,
+    MAX_FOCUS_BLUR,
+    MAX_FOCUS_CORNER,
+    MAX_FOCUS_DIM,
     CREAM,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
@@ -56,8 +63,11 @@ from core.annotate.style import (
     HIGHLIGHT_OVERLAY_OPACITY,
     HIGHLIGHT_RADIUS,
     HIGHLIGHT_SWATCHES,
+    PEN_MARKER_WIDTH,
+    PEN_WIDTH,
     MARKER_STROKE,
     MAX_HIGHLIGHT_RADIUS,
+    MAX_PEN_WIDTH,
     MAX_LENS_FRAME_WIDTH,
     MAX_LENS_PART_WIDTH,
     MAX_LINE_WIDTH,
@@ -69,6 +79,7 @@ from core.annotate.style import (
     MIN_LENS_PART_WIDTH,
     MIN_LINE_WIDTH,
     MIN_NUMBER_SIZE,
+    MIN_PEN_WIDTH,
     MIN_SCALE,
     MIN_STEP_SIZE,
     MIN_STEP_STROKE,
@@ -110,6 +121,11 @@ HIGHLIGHT_MODE_LABELS = {
     HighlightMode.MARKER: "Marcador",
     HighlightMode.OVERLAY: "Translucido",
 }
+PEN_MODE_LABELS = {
+    PenMode.PEN: "Lapiz",
+    PenMode.MARKER: "Resaltador",
+    PenMode.OVERLAY: "Resaltador translucido",
+}
 PRESET_LABELS = {
     "nota": "Nota",
     "nota2": "Nota 2",
@@ -120,7 +136,7 @@ PRESET_LABELS = {
 }
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
- _PAGE_CROP, _PAGE_HIGHLIGHT) = range(9)
+ _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS) = range(11)
 
 
 RESET_TIP = "Doble clic para restablecer el valor por defecto"
@@ -206,6 +222,8 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_lens_page())
         self._pages.addWidget(self._build_crop_page())
         self._pages.addWidget(self._build_highlight_page())
+        self._pages.addWidget(self._build_stroke_page())
+        self._pages.addWidget(self._build_focus_page())
 
         # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
         self._scroll = QScrollArea()
@@ -427,6 +445,76 @@ class PropertiesPanel(QWidget):
     def _reset_highlight_mode(self) -> None:
         self._c.edit_selected(_merge=False, mode=HighlightMode.MARKER, opacity=HIGHLIGHT_MARKER_OPACITY)
 
+    # --- trazo a mano alzada (lapiz y resaltador libre) ---------------------------------------------
+
+    @staticmethod
+    def _pen_defaults(mode: PenMode) -> tuple[float, float]:
+        """(grosor, opacidad) de fabrica de cada modo: el lapiz es fino y opaco; el resaltador, ancho (y el
+        translucido, a media opacidad para que se lea el texto de abajo)."""
+        if mode is PenMode.PEN:
+            return PEN_WIDTH, 1.0
+        return PEN_MARKER_WIDTH, HIGHLIGHT_OVERLAY_OPACITY if mode is PenMode.OVERLAY else HIGHLIGHT_MARKER_OPACITY
+
+    def _selected_pen_default(self, which: int):
+        item = self._c.selected_item()
+        mode = item.mode if isinstance(item, Stroke) else PenMode.PEN
+        return self._pen_defaults(mode)[which]
+
+    def _on_pen_mode_changed(self) -> None:
+        """Cambiar de modo (un solo paso): ajusta la opacidad al modo y, al pasar de lapiz a resaltador o al reves,
+        tambien el grosor. Entre los dos resaltadores el grosor se conserva."""
+        item = self._c.selected_item()
+        if self._syncing or not isinstance(item, Stroke):
+            return
+        mode = PenMode(self._pen_mode.currentData())
+        width, opacity = self._pen_defaults(mode)
+        changes = {"mode": mode, "opacity": opacity}
+        if (item.mode is PenMode.PEN) != (mode is PenMode.PEN):
+            changes["width"] = width
+        self._c.edit_selected(_merge=False, **changes)
+
+    def _reset_pen_mode(self) -> None:
+        self._c.edit_selected(_merge=False, mode=PenMode.PEN, width=PEN_WIDTH, opacity=1.0)
+
+    def _build_stroke_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self._pen_mode = QComboBox()
+        for mode, label in PEN_MODE_LABELS.items():
+            self._pen_mode.addItem(label, mode.value)
+        self._pen_mode.currentIndexChanged.connect(lambda _i: self._on_pen_mode_changed())
+        self._reset_row(
+            form, "Modo", self._pen_mode, self._reset_pen_mode,
+            lambda: not isinstance(self._c.selected_item(), Stroke)
+            or (self._c.selected_item().mode is PenMode.PEN and self._c.selected_item().width == PEN_WIDTH
+                and self._c.selected_item().opacity == 1.0),
+        )
+        note = QLabel(
+            "Lapiz: trazo opaco. Resaltador: deja el texto negro legible, para capturas claras. "
+            "Resaltador translucido: se ve en capturas oscuras."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self._pen_color = self._color_row(form, "Color", "color")
+        self._pen_width = QDoubleSpinBox()
+        self._pen_width.setRange(MIN_PEN_WIDTH, MAX_PEN_WIDTH)
+        self._pen_width.setDecimals(1)
+        self._pen_width.setSingleStep(0.5)
+        self._pen_width.setSuffix(" px")
+        self._pen_width.valueChanged.connect(lambda v: self._apply(width=float(v)))
+        self._field_row(form, "Grosor", self._pen_width, "width", lambda: self._selected_pen_default(0))
+        self._pen_opacity = QSpinBox()
+        self._pen_opacity.setRange(5, 100)
+        self._pen_opacity.setSuffix(" %")
+        self._pen_opacity.valueChanged.connect(lambda v: self._apply(opacity=v / 100))
+        self._field_row(form, "Opacidad", self._pen_opacity, "opacity", lambda: self._selected_pen_default(1))
+        self._pen_glow = QCheckBox("Resplandor")
+        self._pen_glow.toggled.connect(lambda on: self._apply(glow=on))
+        form.addRow(self._pen_glow)
+        self._pen_form = form
+        self._pen_glow_color = self._color_row(form, "Color del resplandor", "glow_color")
+        return page
+
     def _build_highlight_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
@@ -639,6 +727,37 @@ class PropertiesPanel(QWidget):
         self._field_row(form, "Tamano del bloque", self._redaction_block, "block",
                         lambda: max(6, round(DEFAULT_REDACTION_BLOCK * self._c.scale())))
         note = QLabel("El pixelado es irreversible en la imagen exportada.")
+        note.setWordWrap(True)
+        form.addRow(note)
+        return page
+
+    def _build_focus_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self._focus_dim = QSpinBox()
+        self._focus_dim.setRange(0, round(MAX_FOCUS_DIM * 100))
+        self._focus_dim.setSuffix(" %")
+        self._focus_dim.valueChanged.connect(lambda v: self._apply(dim=v / 100))
+        self._field_row(form, "Oscurecer", self._focus_dim, "dim", FOCUS_DIM)
+        self._focus_blur = QDoubleSpinBox()
+        self._focus_blur.setRange(0.0, MAX_FOCUS_BLUR)
+        self._focus_blur.setDecimals(1)
+        self._focus_blur.setSingleStep(1.0)
+        self._focus_blur.setSuffix(" px")
+        self._focus_blur.valueChanged.connect(lambda v: self._apply(blur=float(v)))
+        self._field_row(form, "Desenfocar", self._focus_blur, "blur", 0.0)
+        self._focus_corner = QDoubleSpinBox()
+        self._focus_corner.setRange(0.0, MAX_FOCUS_CORNER)
+        self._focus_corner.setDecimals(0)
+        self._focus_corner.setSuffix(" px")
+        self._focus_corner.valueChanged.connect(lambda v: self._apply(corner=float(v)))
+        self._field_row(form, "Esquinas", self._focus_corner, "corner", 0.0)
+        note = QLabel(
+            "La zona se queda nitida y todo lo demas se oscurece y/o se desenfoca. Solo hay un foco por captura: "
+            "dibujar otro reemplaza al actual. Las lupas siguen viendose claras. "
+            "OJO: desenfocar NO oculta datos confidenciales (con un poco de trabajo se pueden recuperar); "
+            "para anonimizar usa Pixelar."
+        )
         note.setWordWrap(True)
         form.addRow(note)
         return page
@@ -876,6 +995,18 @@ class PropertiesPanel(QWidget):
                 self._lens_form.setRowVisible(
                     self._lens_glow_color, item.glow or (item.connector and item.connector_glow)
                 )
+            elif isinstance(item, Stroke):
+                self._pages.setCurrentIndex(_PAGE_STROKE)
+                self._title.setText("Lapiz" if item.mode is PenMode.PEN else "Resaltador libre")
+                self._set_combo(self._pen_mode, item.mode.value)
+                default_color = pal.pen if item.mode is PenMode.PEN else pal.highlight
+                self._pen_color.set_value(item.color or default_color, item.color is not None)
+                self._set_spin(self._pen_width, item.width)
+                if self._pen_opacity.value() != round(item.opacity * 100):
+                    self._pen_opacity.setValue(round(item.opacity * 100))
+                self._pen_glow.setChecked(item.glow)
+                self._pen_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._pen_form.setRowVisible(self._pen_glow_color, item.glow)
             elif isinstance(item, Highlight):
                 self._pages.setCurrentIndex(_PAGE_HIGHLIGHT)
                 self._title.setText("Resaltador")
@@ -887,6 +1018,13 @@ class PropertiesPanel(QWidget):
                     self._hl_opacity.setValue(round(item.opacity * 100))
                 if abs(self._hl_radius.value() - item.radius) > 1e-9:
                     self._hl_radius.setValue(item.radius)
+            elif isinstance(item, Spotlight):
+                self._pages.setCurrentIndex(_PAGE_FOCUS)
+                self._title.setText("Foco")
+                if self._focus_dim.value() != round(item.dim * 100):
+                    self._focus_dim.setValue(round(item.dim * 100))
+                self._set_spin(self._focus_blur, item.blur)
+                self._set_spin(self._focus_corner, item.corner)
             elif isinstance(item, Redaction):
                 self._pages.setCurrentIndex(_PAGE_REDACTION)
                 self._title.setText("Pixelado")
