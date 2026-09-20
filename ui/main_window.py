@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.brand import default_cover_config, load_brand, save_brand
 from core.geometry import (
     MAX_SUBTITLE_BORDER,
     CanvasSize,
@@ -51,7 +52,9 @@ from core.geometry import (
 )
 from core.presets import PresetError, list_presets, load_preset, save_preset
 from core.text_utils import normalize_title, wrap_title
+from core.user_settings import UserSettingsError
 from ui.annotate.tab import AnnotateTab
+from ui.brand_dialog import BrandDialog
 from ui.dialogs import OverwriteConfirmDialog
 from ui.preview import PreviewWidget
 from ui.widgets import ColorPickerButton, SliderSpinBox
@@ -134,11 +137,11 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Cover Studio — Excel Solutions")
+        self.setWindowTitle(f"Cover Studio — {load_brand().name}")
         self.resize(1400, 900)
         self.setAcceptDrops(True)
 
-        self.config = CoverConfig()
+        self.config = default_cover_config()
         self.photo_path: Path | None = None
         self.output_manually_edited = False
         self.last_output_path: Path | None = None
@@ -174,6 +177,7 @@ class MainWindow(QMainWindow):
         self.annotate_tab = AnnotateTab()
         self.annotate_tab.statusMessage.connect(self.statusBar().showMessage)
         self.annotate_tab.dirtyChanged.connect(self._on_annotate_dirty_changed)
+        self.annotate_tab.panel.editBrandRequested.connect(self._on_edit_brand_clicked)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(cover_page, "Portada")
@@ -498,6 +502,11 @@ class MainWindow(QMainWindow):
         restore_btn = QPushButton("Restaurar colores de marca")
         restore_btn.clicked.connect(self._on_restore_brand_colors_clicked)
         layout.addWidget(restore_btn)
+
+        edit_brand_btn = QPushButton("Editar colores de marca...")
+        edit_brand_btn.setToolTip("Cambia los colores de marca por defecto (de Portada y de Anotar)")
+        edit_brand_btn.clicked.connect(self._on_edit_brand_clicked)
+        layout.addWidget(edit_brand_btn)
 
         swap_btn = QPushButton("Intercambiar banda ↔ acento")
         swap_btn.clicked.connect(self._on_swap_colors_clicked)
@@ -849,12 +858,37 @@ class MainWindow(QMainWindow):
         self.config.text_outline_color = hex_color
 
     def _on_restore_brand_colors_clicked(self) -> None:
-        defaults = CoverConfig()
+        defaults = default_cover_config()
         self.band_color_picker.set_hex_color(defaults.band_color)
         self.accent_color_picker.set_hex_color(defaults.accent_color)
         self.text_color_picker.set_hex_color(defaults.text_color)
         self.outline_color_picker.set_hex_color(defaults.text_outline_color)
         self.outline_checkbox.setChecked(defaults.text_outline_enabled)
+        # los colores del subtitulo (y los segundos colores de sus degradados) tambien son de la marca
+        self.subtitle_text_color_picker.set_hex_color(defaults.subtitle_text_color)
+        self.subtitle_outline_color_picker.set_hex_color(defaults.subtitle_outline_color)
+        self.subtitle_bg_color_picker.set_hex_color(defaults.subtitle_bg_color)
+        self.subtitle_bg_color2_picker.set_hex_color(defaults.subtitle_bg_color2)
+        self.subtitle_border_color_picker.set_hex_color(defaults.subtitle_border_color)
+        self.subtitle_border_color2_picker.set_hex_color(defaults.subtitle_border_color2)
+
+    def _on_edit_brand_clicked(self) -> None:
+        dialog = BrandDialog(load_brand(), self)
+        if dialog.exec() != BrandDialog.Accepted:
+            return
+        brand = dialog.brand()
+        try:
+            path = save_brand(brand)
+        except UserSettingsError as exc:
+            QMessageBox.critical(self, "No se pudieron guardar los colores de marca", str(exc))
+            return
+        self.setWindowTitle(f"Cover Studio — {brand.name}")
+        if dialog.apply_now():
+            self._on_restore_brand_colors_clicked()
+            self.annotate_tab.panel.apply_brand_palette()
+        self.annotate_tab.panel.refresh_brand()
+        suffix = "" if dialog.apply_now() else " Usa 'Restaurar colores de marca' para aplicarlos a lo que tienes abierto."
+        self.statusBar().showMessage(f"Colores de marca guardados en {path}.{suffix}")
 
     def _on_swap_colors_clicked(self) -> None:
         band, accent = self.config.accent_color, self.config.band_color
@@ -1023,7 +1057,7 @@ class MainWindow(QMainWindow):
 
     def _on_reset_all_clicked(self) -> None:
         self.output_manually_edited = False
-        self._apply_config_to_widgets(CoverConfig())
+        self._apply_config_to_widgets(default_cover_config())
         self.statusBar().showMessage("Configuracion restablecida a los valores de marca.")
 
     # ------------------------------------------------------------------

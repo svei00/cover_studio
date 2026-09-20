@@ -567,14 +567,25 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   relleno de la banda al acento y el borde del acento a la banda (al reves, para que el borde se distinga); solo
   toca lo que esta encendido y, si no hay nada, enciende los dos.
 
-### Pendiente (fase futura): colores de marca configurables
+### Colores de marca configurables (HECHO)
 
-- Hoy los colores de marca estan fijos en el codigo: Portada en los defaults de `CoverConfig` (banda `#21B868`,
-  acento `#3182DF`, texto `#F1EBDF`...) y `presets/default.json`; Anotar en `core/annotate/style.py` y
-  `palette.BRAND_PALETTE`. Para usar la herramienta en otra marca o venderla, la idea es UN archivo de marca (p. ej.
-  `brand.json`, con nombre de la marca y colores con nombre) que alimente los defaults de las dos pestanas, el boton
-  "Restaurar colores de marca" y el degradado del subtitulo. La infraestructura de datos de usuario de
-  `core/user_settings.py` ya sirve de base.
+- `core/brand.py` (puro): `Brand(name, band, accent, text, outline, subtitle_bg, subtitle_border, mark, glow, lens, step,
+  highlight)`, guardada en `brand.json` dentro de la carpeta de datos del USUARIO (`user_data_dir()`, la misma de los
+  colores personalizados; `COVER_STUDIO_HOME` la cambia). Sin archivo, o con uno danado, la marca es Excel Solutions con
+  EXACTAMENTE los valores de siempre (hay un test que lo exige): nada cambia hasta que alguien guarda la suya.
+- Alimenta los valores POR DEFECTO, no lo ya hecho: `default_cover_config()` (CoverConfig con los colores de la marca;
+  `band` tambien cierra el degradado del borde del subtitulo y `accent` el del relleno) y `brand_palette()` (Palette de
+  los documentos NUEVOS de Anotar y de "Restaurar colores de marca"; `mark` = recuadro, flecha y lapiz). La ventana
+  principal usa `default_cover_config()` al arrancar, en "Restablecer todo" y en "Restaurar colores de marca" (que ahora
+  tambien restaura los colores del subtitulo); el titulo de la ventana lleva el nombre de la marca.
+- NO cambian los proyectos de Anotar ya guardados (llevan su paleta completa) ni los presets (llevan sus colores):
+  `palette_from_dict` sigue cayendo a la paleta incorporada, no a la de la marca.
+- UI: `ui/brand_dialog.py` ("Editar colores de marca..." en Portada y en el panel de Anotar). Casilla "Aplicar ahora" (apagada
+  por defecto) para actualizar ya el diseno de Portada y la captura abierta; sin ella solo cambian los valores por defecto.
+- Carga con cache por (ruta, mtime, tamano): se consulta en cada seleccion del panel de Anotar, y editar el archivo a mano
+  se nota sin reiniciar. Escritura atomica compartida (`user_settings.write_text_atomic`).
+- Limites: la marca no toca tipografia, tamanos ni las `style.*` internas (p. ej. los presets de texto de Anotar y los
+  colores del resaltador rapido); si hace falta, se agregan como colores con nombre nuevos en `Brand`.
 
 ### Lupa: rectangular por defecto
 
@@ -623,3 +634,18 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   fabrica; sin `rect` es un proyecto danado.
 - **Advertencia (UI)**: el panel y el tooltip dicen que desenfocar NO oculta datos confidenciales (un desenfoque se
   puede deshacer parcialmente); para anonimizar esta Pixelar.
+
+### Escalar capturas (fase 1, sin IA)
+
+- `core/annotate/upscale.py` (puro, Pillow): `upscale(img, factor, sharpen)` con `factor` en `FACTORS = (2, 3, 4)`:
+  remuestreo LANCZOS y `UnsharpMask` (radio proporcional a la escala, umbral 1) solo sobre el color; el alfa se conserva.
+  Tope de `MAX_OUTPUT_PIXELS` (100 MP), que se comprueba ANTES de reservar memoria. `save_upscaled` escribe a un
+  temporal y renombra, solo PNG (sin transparencia se guarda como RGB, que pesa menos) y nunca pisa la captura original.
+- UI: boton "Escalar" (menu: 2x, 3x, 4x y la casilla "Con nitidez") junto a Exportar. Pide el destino con el dialogo de
+  guardar (por defecto `<nombre>@2x.png` junto a la captura). Escala la captura ORIGINAL, sin anotaciones, y NO cambia el
+  documento abierto: el resultado se abre despues con "Abrir..." y se anota (el tamano de trazo se ajusta solo por el
+  ancho de la imagen: `doc_scale`).
+- Limite honesto: es remuestreo, no inventa detalle. Svei comparo Lightshot y la captura de Windows (ambas ~1255x853 a
+  144 dpi): la resolucion es la misma, asi que la ganancia es de suavidad del texto al ampliar, no de informacion.
+- Fase 2 (NO hecha, solo si hace falta): motor IA externo opcional (Real-ESRGAN ncnn); avisar de que una IA puede
+  deformar digitos y letras, asi que no se usaria en capturas con cifras que importen.

@@ -48,7 +48,8 @@ from core.annotate.model import (
     TextAlign,
     TextLabel,
 )
-from core.annotate.palette import BRAND_PALETTE, PALETTE_LABELS
+from core.annotate.palette import PALETTE_LABELS
+from core.brand import brand_palette
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
     CARD_FILL,
@@ -200,6 +201,8 @@ class _ColorRow(QWidget):
 
 
 class PropertiesPanel(QWidget):
+    editBrandRequested = Signal()   # el boton 'Editar colores de marca...': lo atiende la ventana principal
+
     def __init__(self, controller: EditController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._c = controller
@@ -302,16 +305,20 @@ class PropertiesPanel(QWidget):
         colors_form = QFormLayout(self._colors_group)
         self._palette_pickers: dict[str, ColorPickerButton] = {}
         for key, label in PALETTE_LABELS.items():
-            picker = ColorPickerButton(getattr(BRAND_PALETTE, key))
+            picker = ColorPickerButton(getattr(brand_palette(), key))
             picker.colorChanged.connect(lambda hex_color, k=key: self._on_palette_color(k, hex_color))
             self._palette_pickers[key] = picker
             reset_label = _ResetLabel(label)
-            reset_label.doubleClicked.connect(lambda k=key: self._on_palette_color(k, getattr(BRAND_PALETTE, k)))
+            reset_label.doubleClicked.connect(lambda k=key: self._on_palette_color(k, getattr(brand_palette(), k)))
             colors_form.addRow(reset_label, picker)
         self._restore_btn = QPushButton("Restaurar colores de marca")
-        self._restore_btn.setToolTip("Vuelve a los colores de las infografias de Excel Solutions")
+        self._restore_btn.setToolTip("Vuelve a los colores de tu marca (por defecto, los de Excel Solutions)")
         self._restore_btn.clicked.connect(self._on_restore_palette)
         colors_form.addRow(self._restore_btn)
+        self._brand_btn = QPushButton("Editar colores de marca...")
+        self._brand_btn.setToolTip("Cambia los colores de marca por defecto (de Portada y de Anotar)")
+        self._brand_btn.clicked.connect(self.editBrandRequested)
+        colors_form.addRow(self._brand_btn)
         layout.addWidget(self._colors_group)
         layout.addStretch(1)
         return page
@@ -321,7 +328,17 @@ class PropertiesPanel(QWidget):
             self._c.set_palette(replace(self._c.doc.palette, **{key: hex_color}))
 
     def _on_restore_palette(self) -> None:
-        self._c.set_palette(BRAND_PALETTE)
+        self._c.set_palette(brand_palette())
+
+    def apply_brand_palette(self) -> None:
+        """Aplica ya los colores de marca a la captura abierta (un paso de deshacer)."""
+        if self._c.doc is not None:
+            self._on_restore_palette()
+
+    def refresh_brand(self) -> None:
+        """La marca cambio: vuelve a calcular lo que depende de ella (p. ej. si 'Restaurar' sirve)."""
+        if self._c.doc is not None:
+            self._sync_document()
 
     def _reset_row(
         self,
@@ -900,7 +917,7 @@ class PropertiesPanel(QWidget):
         reescribe un control que ya tiene el valor (asi no se pierde el cursor
         mientras se escribe)."""
         item = self._c.selected_item()
-        pal = self._c.doc.palette if self._c.doc is not None else BRAND_PALETTE
+        pal = self._c.doc.palette if self._c.doc is not None else brand_palette()
         self._syncing = True
         try:
             if self._c.tool is Tool.CROP and self._c.doc is not None:
@@ -1047,7 +1064,7 @@ class PropertiesPanel(QWidget):
             return
         for key, picker in self._palette_pickers.items():
             picker.set_hex_color(getattr(doc.palette, key))
-        self._restore_btn.setEnabled(doc.palette != BRAND_PALETTE)
+        self._restore_btn.setEnabled(doc.palette != brand_palette())
         if self._padding_spin.value() != doc.padding:
             self._padding_spin.setValue(doc.padding)
         auto = doc.style_scale is None

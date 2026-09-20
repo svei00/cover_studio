@@ -57,13 +57,9 @@ def load_custom_colors(path: Path | None = None) -> list[str | None]:
     return result + [None] * (MAX_CUSTOM_COLORS - len(result))
 
 
-def save_custom_colors(colors: Sequence[str | None], path: Path | None = None) -> Path:
-    """Guarda los colores personalizados (hasta `MAX_CUSTOM_COLORS`). Escribe a un archivo temporal y lo
-    renombra, asi un corte a mitad de escritura no deja el JSON a medias."""
-    path = path or custom_colors_path()
-    clean = [c.lower() if isinstance(c, str) and _HEX_RE.fullmatch(c) else None for c in list(colors)[:MAX_CUSTOM_COLORS]]
-    clean += [None] * (MAX_CUSTOM_COLORS - len(clean))
-    payload = json.dumps({"version": 1, "custom_colors": clean}, indent=2, ensure_ascii=False)
+def write_text_atomic(path: Path, payload: str, what: str) -> None:
+    """Escribe `payload` en `path` (crea la carpeta) via un archivo temporal que se renombra: un corte a mitad de
+    escritura no deja el archivo a medias. `what` es lo que se guardaba, para el mensaje de error."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
@@ -75,5 +71,15 @@ def save_custom_colors(colors: Sequence[str | None], path: Path | None = None) -
             Path(tmp_name).unlink(missing_ok=True)
             raise
     except OSError as exc:
-        raise UserSettingsError(f"No se pudieron guardar los colores personalizados en {path}: {exc}") from exc
+        raise UserSettingsError(f"No se pudieron guardar {what} en {path}: {exc}") from exc
+
+
+def save_custom_colors(colors: Sequence[str | None], path: Path | None = None) -> Path:
+    """Guarda los colores personalizados (hasta `MAX_CUSTOM_COLORS`). Escribe a un archivo temporal y lo
+    renombra, asi un corte a mitad de escritura no deja el JSON a medias."""
+    path = path or custom_colors_path()
+    clean = [c.lower() if isinstance(c, str) and _HEX_RE.fullmatch(c) else None for c in list(colors)[:MAX_CUSTOM_COLORS]]
+    clean += [None] * (MAX_CUSTOM_COLORS - len(clean))
+    payload = json.dumps({"version": 1, "custom_colors": clean}, indent=2, ensure_ascii=False)
+    write_text_atomic(path, payload, "los colores personalizados")
     return path

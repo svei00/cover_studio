@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -28,11 +29,13 @@ from PySide6.QtWidgets import (
 )
 
 from core.annotate.bounds import required_padding
+from core.brand import brand_palette
 from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
 from core.annotate.model import AnnotationDoc, Magnifier, Redaction
 from core.annotate.primitives import build_primitives
 from core.annotate.raster import active_spotlight, apply_redactions, apply_spotlight, lens_crops, load_image
+from core.annotate.upscale import FACTORS, save_upscaled, scaled_output_path
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
@@ -96,8 +99,28 @@ class AnnotateTab(QWidget):
         self.export_btn = QPushButton("Exportar PNG...")
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._on_export_clicked)
+        self.scale_btn = QPushButton("Escalar")
+        self.scale_btn.setToolTip(
+            "Agranda la captura ORIGINAL (sin anotaciones) con remuestreo Lanczos y un poco de nitidez y la guarda "
+            "como nombre@2x.png. No inventa detalle: sirve para que el texto se vea suave al ampliar. "
+            "Abre el resultado con Abrir... para anotarlo."
+        )
+        self.scale_btn.setEnabled(False)
+        scale_menu = QMenu(self.scale_btn)
+        self.scale_actions = {}
+        for factor in FACTORS:
+            action = scale_menu.addAction(f"Escalar a {factor}x...")
+            action.triggered.connect(lambda _checked=False, f=factor: self._on_scale_clicked(f))
+            self.scale_actions[factor] = action
+        scale_menu.addSeparator()
+        self.sharpen_action = scale_menu.addAction("Con nitidez")
+        self.sharpen_action.setCheckable(True)
+        self.sharpen_action.setChecked(True)
+        self.scale_btn.setMenu(scale_menu)
         self.svg_checkbox = QCheckBox("Guardar tambien el SVG")
         self.info_label = QLabel("Sin captura.")
+        # la etiqueta cede espacio (se recorta) antes de ensanchar la ventana: la barra de arriba ya va justa
+        self.info_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 
         bar = QHBoxLayout()
         bar.addWidget(self.open_btn)
@@ -107,6 +130,7 @@ class AnnotateTab(QWidget):
         bar.addWidget(self.save_btn)
         bar.addWidget(self.copy_btn)
         bar.addWidget(self.export_btn)
+        bar.addWidget(self.scale_btn)
 
         self.controller = EditController(self)
         self.canvas = AnnotateCanvas()
@@ -348,7 +372,7 @@ class AnnotateTab(QWidget):
             QMessageBox.critical(self, "No se pudo abrir la captura", str(exc))
             return
 
-        doc = AnnotationDoc(path, image.size)
+        doc = AnnotationDoc(path, image.size, palette=brand_palette())   # un documento nuevo parte de la marca
         note = ""
         sidecar = project or sidecar_path(path)
         if sidecar.exists():
@@ -372,6 +396,7 @@ class AnnotateTab(QWidget):
             button.setEnabled(True)
         self.save_btn.setEnabled(True)
         self.copy_btn.setEnabled(True)
+        self.scale_btn.setEnabled(True)
         self.controller.set_doc(doc)
         self.statusMessage.emit(f"Captura abierta: {path}{note}")
 
@@ -401,6 +426,7 @@ class AnnotateTab(QWidget):
         if self.doc.crop is not None:
             size += f" (recorte de {self.doc.image_size[0]} x {self.doc.image_size[1]})"
         self.info_label.setText(f"{self.doc.image_path.name} - {size} - {len(self.doc.items)} anotaciones")
+        self.info_label.setToolTip(self.info_label.text())
 
     def _lens_images(self) -> dict[str, QImage]:
         """Recorte ampliado de cada lupa, tomado del bitmap YA pixelado. Se
@@ -425,6 +451,38 @@ class AnnotateTab(QWidget):
     # ------------------------------------------------------------------
     # Exportar
     # ------------------------------------------------------------------
+
+    def _on_scale_clicked(self, factor: int) -> None:
+        if self.doc is None:
+            return
+        chosen, _ = QFileDialog.getSaveFileName(
+            self, f"Guardar captura escalada {factor}x", str(scaled_output_path(self.doc.image_path, factor)),
+            "PNG (*.png)",
+        )
+        if chosen:
+            self.scale_capture(factor, Path(chosen))
+
+    def scale_capture(self, factor: int, output_path: Path) -> bool:
+        """Guarda la captura original (sin anotaciones) escalada `factor` veces. No cambia el documento abierto.
+        Devuelve True si se guardo."""
+        if self.doc is None:
+            return False
+        source = self.doc.image_path
+        start = time.perf_counter()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            size = save_upscaled(source, output_path, factor, sharpen=self.sharpen_action.isChecked())
+        except GeometryError as exc:  # incluye AnnotateError
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "No se pudo escalar", str(exc))
+            return False
+        QApplication.restoreOverrideCursor()
+        before = self.doc.image_size
+        self.statusMessage.emit(
+            f"Escalada {factor}x ({before[0]} x {before[1]} -> {size[0]} x {size[1]} px) en {output_path} - "
+            f"{time.perf_counter() - start:.2f}s. Abrela con Abrir... para anotarla"
+        )
+        return True
 
     def _on_export_clicked(self) -> None:
         if self.doc is None:
