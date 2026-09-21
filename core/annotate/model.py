@@ -11,6 +11,8 @@ from core.annotate.palette import BRAND_PALETTE, Palette
 from core.annotate.style import (
     CARD_FILL,
     CREAM,
+    DEFAULT_GLOW_SIZE,
+    DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
@@ -120,6 +122,8 @@ class Marker:
     # flecha automatica del lado elegido en `arrow`.
     arrow_start: tuple[float, float] | None = None
     arrow_tip: tuple[float, float] | None = None
+    glow_strength: float = DEFAULT_GLOW_STRENGTH   # intensidad del resplandor (1.0 = el de siempre)
+    glow_size: float = DEFAULT_GLOW_SIZE           # alcance del halo (1.0 = el de siempre)
 
     @property
     def custom_arrow(self) -> bool:
@@ -141,6 +145,8 @@ class Arrow:
     head_end: HeadStyle = HeadStyle.ARROW
     line_style: LineStyle = LineStyle.SOLID
     width: float = MARKER_STROKE
+    glow_strength: float = DEFAULT_GLOW_STRENGTH
+    glow_size: float = DEFAULT_GLOW_SIZE
 
 
 @dataclass(frozen=True)
@@ -161,6 +167,8 @@ class StepBadge:
     border_width: float = STEP_STROKE
     glow: bool = False
     glow_color: str | None = None
+    glow_strength: float = DEFAULT_GLOW_STRENGTH
+    glow_size: float = DEFAULT_GLOW_SIZE
 
 
 @dataclass(frozen=True)
@@ -235,6 +243,8 @@ class Magnifier:
     connector_width: float | None = None
     connector_style: LineStyle = LineStyle.SOLID
     connector_glow: bool = False          # resplandor del conector (su color es `glow_color`, el del lente)
+    glow_strength: float = DEFAULT_GLOW_STRENGTH   # intensidad y alcance del resplandor del lente Y del conector
+    glow_size: float = DEFAULT_GLOW_SIZE
 
 
 @dataclass(frozen=True)
@@ -265,6 +275,8 @@ class Stroke:
     opacity: float = 1.0
     glow: bool = False
     glow_color: str | None = None
+    glow_strength: float = DEFAULT_GLOW_STRENGTH
+    glow_size: float = DEFAULT_GLOW_SIZE
 
 
 Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight

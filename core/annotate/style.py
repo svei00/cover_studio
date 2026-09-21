@@ -27,6 +27,26 @@ GLOW_RINGS: tuple[tuple[float, float], ...] = tuple(
 )
 GLOW_RING_WIDTH = 4.5
 CONNECTOR_GLOW_STRENGTH = 0.45   # el halo del conector apila 9 lineas llenas: cada una va a esta fraccion de la opacidad del anillo
+# Ajuste del resplandor por anotacion: intensidad (multiplica la opacidad) y grosor (multiplica el alcance). 1.0 = el de siempre.
+DEFAULT_GLOW_STRENGTH = 1.0
+MIN_GLOW_STRENGTH = 0.1
+MAX_GLOW_STRENGTH = 2.0
+DEFAULT_GLOW_SIZE = 1.0
+MIN_GLOW_SIZE = 0.3
+MAX_GLOW_SIZE = 3.0
+
+
+def glow_rings(strength: float = DEFAULT_GLOW_STRENGTH, size: float = DEFAULT_GLOW_SIZE) -> tuple[tuple[float, float], ...]:
+    """Los anillos del resplandor con la intensidad y el grosor de la anotacion. UNA sola fuente de verdad: lo que se
+    dibuja y lo que se calcula (cotas, margen) salen de aqui. Con los valores por defecto devuelve GLOW_RINGS tal cual."""
+    return tuple((off * size, min(1.0, op * strength)) for off, op in GLOW_RINGS)
+
+
+def glow_ring_width(size: float = DEFAULT_GLOW_SIZE) -> float:
+    """Ancho de cada anillo. Crece con el grosor del halo para que los anillos sigan pegados (si no, con un halo
+    ancho se ven nueve lineas sueltas); con un halo mas chico se queda como siempre."""
+    return GLOW_RING_WIDTH * max(1.0, size)
+
 
 # Resaltador: colores estandar de papeleria (medidos sobre fondo claro con Marcador y sobre
 # fondo oscuro con Translucido, 2026-10).

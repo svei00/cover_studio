@@ -52,6 +52,14 @@ from core.annotate.palette import PALETTE_LABELS
 from core.brand import brand_palette
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
+    DEFAULT_GLOW_SIZE,
+    DEFAULT_GLOW_STRENGTH,
+    MAX_GLOW_SIZE,
+    MAX_GLOW_STRENGTH,
+    MIN_GLOW_SIZE,
+    MIN_GLOW_STRENGTH,
+)
+from core.annotate.style import (
     CARD_FILL,
     FOCUS_DIM,
     MAX_FOCUS_BLUR,
@@ -382,6 +390,36 @@ class PropertiesPanel(QWidget):
 
         return self._reset_row(form, text, control, reset, is_default)
 
+    def _glow_rows(self, form: QFormLayout) -> tuple[QSpinBox, QSpinBox, tuple[QWidget, QWidget]]:
+        """Intensidad y alcance (grosor) del resplandor de la anotacion seleccionada, en %: 100 % es el de siempre.
+        Solo se ven con el resplandor activo (lo decide `_show_glow_rows`)."""
+        strength = QSpinBox()
+        strength.setRange(round(MIN_GLOW_STRENGTH * 100), round(MAX_GLOW_STRENGTH * 100))
+        strength.setSingleStep(5)
+        strength.setSuffix(" %")
+        strength.setToolTip("Que tan fuerte se ve el resplandor")
+        strength.valueChanged.connect(lambda v: self._apply(glow_strength=v / 100))
+        size = QSpinBox()
+        size.setRange(round(MIN_GLOW_SIZE * 100), round(MAX_GLOW_SIZE * 100))
+        size.setSingleStep(10)
+        size.setSuffix(" %")
+        size.setToolTip("Cuanto se extiende el halo hacia afuera")
+        size.valueChanged.connect(lambda v: self._apply(glow_size=v / 100))
+        rows = (
+            self._field_row(form, "Intensidad", strength, "glow_strength", DEFAULT_GLOW_STRENGTH),
+            self._field_row(form, "Grosor del halo", size, "glow_size", DEFAULT_GLOW_SIZE),
+        )
+        return strength, size, rows
+
+    @staticmethod
+    def _sync_glow_rows(form: QFormLayout, spins: tuple[QSpinBox, QSpinBox], rows: tuple[QWidget, QWidget],
+                        item, visible: bool) -> None:
+        for spin, value in zip(spins, (item.glow_strength, item.glow_size)):
+            if spin.value() != round(value * 100):
+                spin.setValue(round(value * 100))
+        for row in rows:
+            form.setRowVisible(row, visible)
+
     def _fit_page_size(self) -> None:
         """El panel mide lo que la pagina visible (no la mas alta de todas): las demas no cuentan."""
         current = self._pages.currentWidget()
@@ -530,6 +568,7 @@ class PropertiesPanel(QWidget):
         form.addRow(self._pen_glow)
         self._pen_form = form
         self._pen_glow_color = self._color_row(form, "Color del resplandor", "glow_color")
+        *self._pen_glow_spins, self._pen_glow_rows = self._glow_rows(form)
         return page
 
     def _build_highlight_page(self) -> QWidget:
@@ -605,6 +644,8 @@ class PropertiesPanel(QWidget):
         self._marker_stroke = self._color_row(form, "Recuadro", "stroke_color")
         self._marker_arrow_color = self._color_row(form, "Flecha", "arrow_color")
         self._marker_glow_color = self._color_row(form, "Resplandor", "glow_color")
+        *self._marker_glow_spins, self._marker_glow_rows = self._glow_rows(form)
+        self._marker_form = form
         return page
 
     def _build_arrow_page(self) -> QWidget:
@@ -633,6 +674,8 @@ class PropertiesPanel(QWidget):
         form.addRow(self._arrow_glow)
         self._arrow_color = self._color_row(form, "Color", "color")
         self._arrow_glow_color = self._color_row(form, "Resplandor", "glow_color")
+        *self._arrow_glow_spins, self._arrow_glow_rows = self._glow_rows(form)
+        self._arrow_form = form
         return page
 
     def _head_combo(self, field: str) -> QComboBox:
@@ -688,6 +731,7 @@ class PropertiesPanel(QWidget):
         form.addRow(self._step_glow)
         self._step_form = form
         self._step_glow_color = self._color_row(form, "Color", "glow_color")
+        *self._step_glow_spins, self._step_glow_rows = self._glow_rows(form)
         return page
 
     def _build_text_page(self) -> QWidget:
@@ -853,6 +897,7 @@ class PropertiesPanel(QWidget):
         self._lens_connector_glow.toggled.connect(lambda on: self._apply(connector_glow=on))
         form.addRow(self._lens_connector_glow)
         self._lens_glow_color = self._color_row(form, "Color", "glow_color")
+        *self._lens_glow_spins, self._lens_glow_rows = self._glow_rows(form)
         form.addRow(replace_btn)
         return page
 
@@ -933,6 +978,7 @@ class PropertiesPanel(QWidget):
                 self._marker_stroke.set_value(item.stroke_color or pal.marker, item.stroke_color is not None)
                 self._marker_arrow_color.set_value(item.arrow_color or pal.arrow, item.arrow_color is not None)
                 self._marker_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._sync_glow_rows(self._marker_form, self._marker_glow_spins, self._marker_glow_rows, item, item.glow)
             elif isinstance(item, Arrow):
                 self._pages.setCurrentIndex(_PAGE_ARROW)
                 self._title.setText(
@@ -946,6 +992,7 @@ class PropertiesPanel(QWidget):
                 self._arrow_glow.setChecked(item.glow)
                 self._arrow_color.set_value(item.color or pal.arrow, item.color is not None)
                 self._arrow_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._sync_glow_rows(self._arrow_form, self._arrow_glow_spins, self._arrow_glow_rows, item, item.glow)
             elif isinstance(item, StepBadge):
                 self._pages.setCurrentIndex(_PAGE_STEP)
                 self._title.setText("Paso numerado")
@@ -967,6 +1014,7 @@ class PropertiesPanel(QWidget):
                 self._step_glow.setChecked(item.glow)
                 self._step_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._step_form.setRowVisible(self._step_glow_color, item.glow)
+                self._sync_glow_rows(self._step_form, self._step_glow_spins, self._step_glow_rows, item, item.glow)
             elif isinstance(item, TextLabel):
                 self._pages.setCurrentIndex(_PAGE_TEXT)
                 self._title.setText("Etiqueta de texto")
@@ -1012,6 +1060,8 @@ class PropertiesPanel(QWidget):
                 self._lens_form.setRowVisible(
                     self._lens_glow_color, item.glow or (item.connector and item.connector_glow)
                 )
+                self._sync_glow_rows(self._lens_form, self._lens_glow_spins, self._lens_glow_rows, item,
+                                     item.glow or (item.connector and item.connector_glow))
             elif isinstance(item, Stroke):
                 self._pages.setCurrentIndex(_PAGE_STROKE)
                 self._title.setText("Lapiz" if item.mode is PenMode.PEN else "Resaltador libre")
@@ -1024,6 +1074,7 @@ class PropertiesPanel(QWidget):
                 self._pen_glow.setChecked(item.glow)
                 self._pen_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._pen_form.setRowVisible(self._pen_glow_color, item.glow)
+                self._sync_glow_rows(self._pen_form, self._pen_glow_spins, self._pen_glow_rows, item, item.glow)
             elif isinstance(item, Highlight):
                 self._pages.setCurrentIndex(_PAGE_HIGHLIGHT)
                 self._title.setText("Resaltador")

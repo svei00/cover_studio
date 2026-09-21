@@ -11,10 +11,14 @@ from core.annotate.freehand import MAX_POINTS
 from core.annotate.errors import AnnotateError
 from core.annotate.palette import is_valid_hex, palette_from_dict, palette_to_dict
 from core.annotate.style import (
+    DEFAULT_GLOW_SIZE,
+    DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
+    MAX_GLOW_SIZE,
+    MAX_GLOW_STRENGTH,
     MAX_HIGHLIGHT_RADIUS,
     MAX_LENS_FRAME_WIDTH,
     MAX_LENS_PART_WIDTH,
@@ -28,6 +32,8 @@ from core.annotate.style import (
     MAX_STEP_SIZE,
     MAX_STEP_STROKE,
     MARKER_STROKE,
+    MIN_GLOW_SIZE,
+    MIN_GLOW_STRENGTH,
     MIN_LENS_FRAME_WIDTH,
     MIN_LENS_PART_WIDTH,
     MIN_LINE_WIDTH,
@@ -161,6 +167,14 @@ def _corner_or_default(value: object) -> float:
     return DEFAULT_LENS_CORNER
 
 
+def _glow_strength(value: object) -> float:
+    return _number_or_default(value, MIN_GLOW_STRENGTH, MAX_GLOW_STRENGTH, DEFAULT_GLOW_STRENGTH)
+
+
+def _glow_size(value: object) -> float:
+    return _number_or_default(value, MIN_GLOW_SIZE, MAX_GLOW_SIZE, DEFAULT_GLOW_SIZE)
+
+
 def _color_or_none(value: object) -> str | None:
     """Color propio de una anotacion; un dato invalido cuenta como "usa la paleta"."""
     return value if is_valid_hex(value) else None
@@ -172,18 +186,20 @@ def item_to_dict(item: Annotation) -> dict:
                 "arrow": item.arrow.value, "glow": item.glow, "stroke_color": item.stroke_color,
                 "glow_color": item.glow_color, "arrow_color": item.arrow_color,
                 "arrow_start": None if item.arrow_start is None else list(item.arrow_start),
-                "arrow_tip": None if item.arrow_tip is None else list(item.arrow_tip)}
+                "arrow_tip": None if item.arrow_tip is None else list(item.arrow_tip),
+                "glow_strength": item.glow_strength, "glow_size": item.glow_size}
     if isinstance(item, Arrow):
         return {"type": "arrow", "id": item.id, "start": list(item.start),
                 "end": list(item.end), "glow": item.glow, "color": item.color,
                 "glow_color": item.glow_color, "head_start": item.head_start.value,
                 "head_end": item.head_end.value, "line_style": item.line_style.value,
-                "width": item.width}
+                "width": item.width, "glow_strength": item.glow_strength, "glow_size": item.glow_size}
     if isinstance(item, StepBadge):
         return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
                 "color": item.color, "shape": item.shape.value, "fill_color": item.fill_color,
                 "number_color": item.number_color, "size": item.size, "number_size": item.number_size,
-                "border_width": item.border_width, "glow": item.glow, "glow_color": item.glow_color}
+                "border_width": item.border_width, "glow": item.glow, "glow_color": item.glow_color,
+                "glow_strength": item.glow_strength, "glow_size": item.glow_size}
     if isinstance(item, TextLabel):
         return {"type": "text", "id": item.id, "pos": list(item.pos), "text": item.text,
                 "size": item.size, "color": item.color, "bold": item.bold, "bg": item.bg,
@@ -204,11 +220,12 @@ def item_to_dict(item: Annotation) -> dict:
                 "source_color": item.source_color, "source_width": item.source_width,
                 "source_style": item.source_style.value, "connector_color": item.connector_color,
                 "connector_width": item.connector_width, "connector_style": item.connector_style.value,
-                "connector_glow": item.connector_glow}
+                "connector_glow": item.connector_glow, "glow_strength": item.glow_strength,
+                "glow_size": item.glow_size}
     if isinstance(item, Stroke):
         return {"type": "stroke", "id": item.id, "points": [[x, y] for x, y in item.points], "color": item.color,
                 "mode": item.mode.value, "width": item.width, "opacity": item.opacity, "glow": item.glow,
-                "glow_color": item.glow_color}
+                "glow_color": item.glow_color, "glow_strength": item.glow_strength, "glow_size": item.glow_size}
     if isinstance(item, Highlight):
         return {"type": "highlight", "id": item.id, "rect": _rect_to_list(item.rect), "color": item.color,
                 "mode": item.mode.value, "opacity": item.opacity, "radius": item.radius}
@@ -224,6 +241,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _color_or_none(data.get("stroke_color")), _color_or_none(data.get("glow_color")),
                 _color_or_none(data.get("arrow_color")),
                 *_custom_arrow(data.get("arrow_start"), data.get("arrow_tip")),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "arrow":
             return Arrow(
@@ -233,6 +251,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _enum_or_default(HeadStyle, data.get("head_end"), HeadStyle.ARROW),
                 _enum_or_default(LineStyle, data.get("line_style"), LineStyle.SOLID),
                 _number_or_default(data.get("width"), MIN_LINE_WIDTH, MAX_LINE_WIDTH, MARKER_STROKE),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "step":
             return StepBadge(
@@ -243,6 +262,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_none(data.get("number_size"), MIN_NUMBER_SIZE, MAX_NUMBER_SIZE),
                 _number_or_default(data.get("border_width"), MIN_STEP_STROKE, MAX_STEP_STROKE, STEP_STROKE),
                 data.get("glow") is True, _color_or_none(data.get("glow_color")),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "text":
             return TextLabel(
@@ -276,6 +296,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_none(data.get("connector_width"), MIN_LENS_PART_WIDTH, MAX_LENS_PART_WIDTH),
                 _enum_or_default(LineStyle, data.get("connector_style"), LineStyle.SOLID),
                 data.get("connector_glow") is True,
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "stroke":
             return Stroke(
@@ -284,6 +305,7 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_default(data.get("width"), MIN_PEN_WIDTH, MAX_PEN_WIDTH, PEN_WIDTH),
                 _number_or_default(data.get("opacity"), 0.0, 1.0, 1.0),
                 data.get("glow") is True, _color_or_none(data.get("glow_color")),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "highlight":
             return Highlight(

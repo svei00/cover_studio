@@ -176,6 +176,8 @@ def _line_parts(
     head_start: HeadStyle = HeadStyle.NONE,
     head_end: HeadStyle = HeadStyle.ARROW,
     line_style: LineStyle = LineStyle.SOLID,
+    glow_strength: float = style.DEFAULT_GLOW_STRENGTH,
+    glow_size: float = style.DEFAULT_GLOW_SIZE,
 ) -> list[Primitive]:
     """Linea de a hacia b con puntas opcionales en cada extremo, con el resplandor debajo."""
     x1, y1 = a
@@ -187,31 +189,33 @@ def _line_parts(
     head = style.ARROW_HEAD * scale * min(3.0, max(0.5, width / style.MARKER_STROKE))   # la punta sigue al grosor
     ux, uy = (x2 - x1) / length, (y2 - y1) / length
     dash, cap = dash_pattern(line_style, sw)
-    extra = style.ARROW_GLOW_EXTRA * scale
+    extra = style.ARROW_GLOW_EXTRA * scale * glow_size
+    glow_opacity = min(1.0, style.ARROW_GLOW_OPACITY * glow_strength)
     heads = [(h, p, d) for h, p, d in ((head_end, b, (ux, uy)), (head_start, a, (-ux, -uy))) if h is not HeadStyle.NONE]
     parts: list[Primitive] = []
     if glow:
-        parts.append(PLine(a, b, glow_color, sw + extra, style.ARROW_GLOW_OPACITY, dash, cap))
+        parts.append(PLine(a, b, glow_color, sw + extra, glow_opacity, dash, cap))
     parts.append(PLine(a, b, color, sw, 1.0, dash, cap))
     for kind, point, (dx, dy) in heads:
         if kind is HeadStyle.DOT:
             radius = max(sw * 1.2, head * 0.35)
             if glow:
-                parts.append(PCircle(point, radius, None, glow_color, extra, opacity=style.ARROW_GLOW_OPACITY))
+                parts.append(PCircle(point, radius, None, glow_color, extra, opacity=glow_opacity))
             parts.append(PCircle(point, radius, color, None))
         else:
             pts = _head_points(point, dx, dy, head)
             if glow:
-                parts.append(PPolygon(pts, None, glow_color, extra, style.ARROW_GLOW_OPACITY))
+                parts.append(PPolygon(pts, None, glow_color, extra, glow_opacity))
             parts.append(PPolygon(pts, color, None))
     return parts
 
 
 def _arrow_parts(
-    a: Point, b: Point, scale: float, glow: bool, color: str = style.RED, glow_color: str = style.GLOW_GOLD
+    a: Point, b: Point, scale: float, glow: bool, color: str = style.RED, glow_color: str = style.GLOW_GOLD,
+    glow_strength: float = style.DEFAULT_GLOW_STRENGTH, glow_size: float = style.DEFAULT_GLOW_SIZE,
 ) -> list[Primitive]:
     """Linea de a hacia b con punta en b, con el resplandor debajo (la flecha de siempre)."""
-    return _line_parts(a, b, scale, glow, color, glow_color)
+    return _line_parts(a, b, scale, glow, color, glow_color, glow_strength=glow_strength, glow_size=glow_size)
 
 
 def _marker_arrow_points(rect: Rect, side: ArrowSide, scale: float) -> tuple[Point, Point]:
@@ -312,23 +316,23 @@ def marker_primitives(
     rx = style.MARKER_RX * scale
     out: list[Primitive] = []
     if m.glow:
-        for off, op in style.GLOW_RINGS:
+        for off, op in style.glow_rings(m.glow_strength, m.glow_size):
             o = off * scale
-            out.append(PRect(m.rect.inflate(o), glow_color, style.GLOW_RING_WIDTH * scale, op, rx + o))
+            out.append(PRect(m.rect.inflate(o), glow_color, style.glow_ring_width(m.glow_size) * scale, op, rx + o))
     out.append(PRect(m.rect, stroke, style.MARKER_STROKE * scale, 1.0, rx))
     if side is not ArrowSide.NONE:
         if m.custom_arrow:
             start, tip = m.arrow_start, m.arrow_tip
         else:
             start, tip = _marker_arrow_points(m.rect, side, scale)
-        out.extend(_arrow_parts(start, tip, scale, m.glow, arrow_color, glow_color))
+        out.extend(_arrow_parts(start, tip, scale, m.glow, arrow_color, glow_color, m.glow_strength, m.glow_size))
     return out
 
 
 def arrow_primitives(a: Arrow, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
     return _line_parts(
         a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow,
-        a.width, a.head_start, a.head_end, a.line_style,
+        a.width, a.head_start, a.head_end, a.line_style, a.glow_strength, a.glow_size,
     )
 
 
@@ -356,9 +360,9 @@ def step_primitives(s: StepBadge, scale: float, palette: Palette = BRAND_PALETTE
     out: list[Primitive] = []
     if s.glow:
         glow_color = s.glow_color or palette.glow
-        for off, op in style.GLOW_RINGS:
+        for off, op in style.glow_rings(s.glow_strength, s.glow_size):
             o = max(0.0, off + (s.border_width - style.MARKER_STROKE) / 2) * scale
-            width = style.GLOW_RING_WIDTH * scale
+            width = style.glow_ring_width(s.glow_size) * scale
             if s.shape is StepShape.CIRCLE:
                 out.append(PCircle(s.center, r + o, None, glow_color, width, opacity=op))
             elif s.shape is StepShape.DIAMOND:
@@ -395,7 +399,7 @@ def stroke_primitives(s: Stroke, scale: float, palette: Palette = BRAND_PALETTE)
     if s.glow:
         # el mismo halo en capas que el conector de la lupa: de la mas ancha y tenue a la mas angosta
         glow_color = s.glow_color or palette.glow
-        for off, op in reversed(style.GLOW_RINGS):
+        for off, op in reversed(style.glow_rings(s.glow_strength, s.glow_size)):
             out.append(PPolyline(curve, glow_color, width + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH))
     out.append(PPolyline(curve, color, width, s.opacity, "multiply" if s.mode is PenMode.MARKER else None))
     return out
@@ -431,9 +435,9 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
         # debajo de todo: el conector y el origen se dibujan encima, y la imagen del lente
         # tapa la parte de los anillos que cae dentro
         glow_color = m.glow_color or palette.glow
-        for off, op in style.GLOW_RINGS:
+        for off, op in style.glow_rings(m.glow_strength, m.glow_size):
             o = (off + (fw - style.MARKER_STROKE) / 2) * scale
-            width = style.GLOW_RING_WIDTH * scale
+            width = style.glow_ring_width(m.glow_size) * scale
             if m.shape is LensShape.CIRCLE:
                 out.append(PCircle(box.center, box.w / 2 + o, None, glow_color, width, opacity=op))
             elif m.shape is LensShape.ELLIPSE:
@@ -448,7 +452,7 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
         # debajo de su contorno navy y de su trazo de color
         glow_color = m.glow_color or palette.glow
         for a, b in lens.connector_segments(m):
-            for off, op in reversed(style.GLOW_RINGS):
+            for off, op in reversed(style.glow_rings(m.glow_strength, m.glow_size)):
                 out.append(PLine(
                     a, b, glow_color, con_w * scale + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH,
                     con_dash, con_cap,
@@ -488,7 +492,7 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
 def item_bounds(item: Annotation, scale: float) -> Rect | None:
     """Caja aproximada de una anotacion, para evitar que las flechas se pisen."""
     if isinstance(item, Marker):
-        return item.rect.inflate(style.GLOW_RINGS[-1][0] * scale)
+        return item.rect.inflate(style.glow_rings(item.glow_strength, item.glow_size)[-1][0] * scale)
     if isinstance(item, Arrow):
         x0, x1 = sorted((item.start[0], item.end[0]))
         y0, y1 = sorted((item.start[1], item.end[1]))
