@@ -649,3 +649,15 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   144 dpi): la resolucion es la misma, asi que la ganancia es de suavidad del texto al ampliar, no de informacion.
 - Fase 2 (NO hecha, solo si hace falta): motor IA externo opcional (Real-ESRGAN ncnn); avisar de que una IA puede
   deformar digitos y letras, asi que no se usaria en capturas con cifras que importen.
+
+### Resplandor ajustable: intensidad y grosor del halo
+
+- `Marker`, `Arrow`, `StepBadge`, `Magnifier` y `Stroke` llevan `glow_strength` (intensidad, multiplica la opacidad) y
+  `glow_size` (grosor del halo, multiplica el alcance). Ambos 1.0 = el resplandor de siempre, identico al pixel. La lupa usa
+  los mismos valores para su lente y su conector.
+- `style.glow_rings(strength, size)` es la UNICA fuente de los anillos: lo usan todos los bucles de `primitives.py` y la cota de
+  `item_bounds`; `bounds.py` mide las primitivas, asi que `required_padding` y el recorte del export siguen al halo solos.
+  `style.glow_ring_width(size)` ensancha cada anillo con el halo (si no, con 300 % se ven nueve lineas sueltas).
+- La flecha (una sola capa, no anillos): la intensidad multiplica `ARROW_GLOW_OPACITY` y el grosor `ARROW_GLOW_EXTRA`.
+- Rangos (`style.py`): intensidad 10-200 %, grosor 30-300 %. `io.py` recorta al rango y un proyecto viejo abre con 100 %/100 %.
+- Panel: filas "Intensidad" y "Grosor del halo" (`_glow_rows`, con restablecer) visibles solo con el resplandor activo.

@@ -1,128 +1,118 @@
 # Traspaso para la siguiente sesion
 
 Leelo completo antes de tocar codigo. Lo escribio la sesion anterior para que esta pueda empezar
-sin repetir descubrimientos ni preguntar lo que ya se decidio.
+sin repetir descubrimientos ni preguntar lo que ya se decidio. (Reescrito el 2026-10-18: el traspaso
+anterior estaba desactualizado; todo su backlog esta HECHO.)
 
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **564 tests pasan.**
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1053 tests pasan.** Arbol limpio y todo subido:
+el ultimo commit es `01951c6` (Escalar + colores de marca); antes `458a13e` (lapiz UI + Foco) y `fe2374d`
+(nucleo del lapiz).
 
 - **Pestana "Portada"**: genera portadas 16:9 (foto + banda + titulo + acento en L), vista previa en
-  vivo con hilo y debounce, arrastre de la banda, presets, guarda anti-sobrescritura.
+  vivo con hilo y debounce, arrastre de la banda y del subtitulo, presets, guarda anti-sobrescritura.
+  Subtitulo con degradado de relleno y de borde (dos colores), contorno de letras y posicion en pixeles.
 - **Pestana "Anotar"**: anota capturas con la identidad de Excel Solutions. Herramientas: Seleccionar,
-  Marcador (con flecha), Recuadro (sin flecha), Flecha, Paso, Texto, Pixelar, Lupa (circular, ovalada,
-  rectangular con esquinas ajustables). Resaltador, recorte, restablecer al valor por defecto (doble clic o boton) y lupa con grosor y resplandor. Paleta de colores del documento + color propio por anotacion,
-  margen extra, escala de trazo, deshacer/rehacer, guardar proyecto (`.anotar.json`), copiar,
-  exportar PNG/SVG, aviso de cambios sin guardar.
+  Marcador (con flecha), Recuadro, Resaltar, Flecha, Linea (puntas y estilos opcionales), **Lapiz** y
+  **Resaltador libre** (mano alzada, suavizado), Paso, Texto, Pixelar, **Foco**, Lupa (rectangular por
+  defecto; circular, ovalada o con esquinas; marco, conector y resplandor), Recortar (no destructivo).
+  Todas se repiten sin volver a pulsar el boton MENOS Texto, Seleccionar, Recortar y Foco (`STICKY_TOOLS`).
+  Paleta del documento + color propio por anotacion, margen extra, escala de trazo, deshacer/rehacer,
+  restablecer al valor por defecto (doble clic en la etiqueta o boton), zoom/desplazamiento, guardar
+  proyecto (`.anotar.json`), copiar, exportar PNG/SVG, aviso de cambios sin guardar.
+- **Boton "Escalar"** (Anotar): agranda la captura ORIGINAL 2x/3x/4x (Lanczos + nitidez) y la guarda como
+  `nombre@2x.png` aparte, sin tocar el documento abierto. Es solo remuestreo: no inventa detalle (Lightshot y
+  la captura de Windows del usuario tienen la MISMA resolucion). La fase 2 con IA (Real-ESRGAN) NO esta hecha y
+  no se recomienda para capturas con cifras (puede deformar digitos).
+- **Colores de marca configurables**: `brand.json` en la carpeta de usuario (`%APPDATA%\Cover Studio`)
+  alimenta los valores POR DEFECTO de Portada y de los documentos nuevos de Anotar. Boton "Editar colores de
+  marca..." en las dos pestanas. Sin archivo = Excel Solutions identico a lo de siempre. NO cambia proyectos
+  ya guardados ni presets.
 - **Animaciones**: SOLO la fase 0 (`core/easing.py`, `core/text_metrics.py`). Fases 1 a 7 pendientes.
 
+Mapa de modulos nuevos de esta etapa (todo con tests en `tests/`):
+- `core/annotate/freehand.py` (lapiz: decimar -> suavizar Chaikin -> Ramer-Douglas-Peucker; curva Catmull-Rom
+  compartida por Qt y SVG via `PPolyline`).
+- `core/annotate/raster.py` (`apply_redactions`, `apply_spotlight`, `lens_crops`; orden del pipeline:
+  captura -> pixelado -> recortes de lupa -> foco -> anotaciones).
+- `core/annotate/upscale.py`, `core/brand.py`, `core/user_settings.py` (colores personalizados + escritura
+  atomica `write_text_atomic`), `ui/brand_dialog.py`.
+
 Documentos de diseno (fuente de verdad, leelos segun la tarea):
-- `docs/arquitectura-anotar.md` — como esta hecha la pestana Anotar y por que.
+- `docs/arquitectura-anotar.md` — como esta hecha la pestana Anotar y por que (una seccion por funcion).
 - `docs/arquitectura-animacion.md` — diseno de las animaciones (video/GIF), con firmas y criterios.
 
-Al empezar: corre `git status` y `git log --oneline -5`. El usuario hace los commits el mismo; si hay
-cambios sin commitear de la sesion anterior, es lo ultimo que se hizo (colores y formas de lupa).
+Al empezar: corre `git status` y `git log --oneline -5`, y la suite completa.
 
 ## 2. Como trabajar con este usuario
 
-- Habla espanol. Directo, sin rodeos; reporta con honestidad lo que NO pudo probar.
-- **Fases chicas y revisables.** Su limite semanal es real: no lances subagentes caros sin avisar
-  (el diseno de las animaciones costo ~3% de su semana). Pide visto bueno antes de cada fase grande.
-- Prefiere Opus para arquitectura y Sonnet para ejecutar. Si algo requiere redisenar, dilo y deja que
-  elija; casi nunca hace falta.
-- **Commits: no los hagas tu.** Dale los comandos en bloques ```bash``` separados (uno por comando, para
-  el boton Run). Mensaje: texto plano, sin comillas ni apostrofes, maximo 10 palabras, **sin
-  Co-Authored-By** (lo pidio explicitamente).
-- Verifica con tests Y mirando el resultado (ver trampas). Cuando un dato del diseno se pueda medir,
-  mide: la sesion anterior encontro tres afirmaciones falsas en el diseno de Opus (rebote del easing,
-  que Pillow midiera mejor que Qt, que Pillow aceptara tamanos fraccionarios).
-- Si el usuario pregunta "ya acabamos?", distingue entre generador de portadas, anotador y animaciones.
+- Habla espanol. Directo, sin rodeos; reporta con honestidad lo que NO pudo probar y lo que encontraste
+  mal (varias veces se encontraron fallos propios midiendo: un rendimiento de 54 s, una regresion de ancho
+  de ventana, pruebas debiles).
+- **Fases chicas y revisables.** Su limite semanal es real: no lances subagentes caros sin avisar.
+  Prefiere Opus para arquitectura y Sonnet para ejecutar.
+- **Commits: no los hagas tu** (salvo que el pida otra cosa, como la correccion del commit del TRUNC, que
+  si autorizo explicitamente, incluido el force push). Dale los comandos en bloques ```bash``` separados.
+  Mensaje en ingles o espanol claro, **sin Co-Authored-By** (lo pidio explicitamente). **Despues de que el
+  diga que commiteo, VERIFICA con `git status` y `git show --stat HEAD`**: dos veces no habia commiteado (o el
+  commit cayo en otro lado / llevaba otro mensaje); una vez un commit de otra sesion (mensaje de TRUNC) arrastro
+  archivos del lapiz.
+- Verifica con tests Y mirando el resultado en la ventana REAL (ver trampas). Si algo se puede medir, mide.
+- No repitas lo ya decidido ni vuelvas a ofrecer opciones que descarto.
 
-## 3. Backlog que el usuario ELIGIO (en este orden)
+## 3. Pendiente: lo que el usuario pidio y aun NO esta hecho
 
-Los cuatro son para la pestana Anotar. Hazlos uno por uno, con tests y verificacion visual, y da el
-commit de cada uno antes de empezar el siguiente.
+### 3.1 Intensidad y grosor del Resplandor: HECHO (sin commitear al escribir esto)
+Ver `docs/arquitectura-anotar.md` ("Resplandor ajustable"). Campos `glow_strength`/`glow_size` en las 5 anotaciones con
+resplandor, helper `style.glow_rings`, filas en el panel. Tests: `tests/test_annotate_glow_tuning.py` y `_ui.py`.
+Verificado a ojo sobre fondo claro y oscuro.
 
-### 3.1 Recortar la captura — HECHO (ver `arquitectura-anotar.md`, "Recorte no destructivo")
-Para "me pase de largo / necesito algo mas pequeno".
-- Recomendado **no destructivo**: `AnnotationDoc.crop: Rect | None` en pixeles de la imagen fuente. Las
-  anotaciones siguen en coordenadas de la fuente; el export y el lienzo muestran solo la region
-  recortada (trasladar por `-crop.x, -crop.y`). Asi se puede deshacer y reabrir el proyecto.
-- Herramienta "Recortar": arrastras el rectangulo (con asas), se aplica (deshacible), y un boton
-  "Quitar recorte". Avisar si hay anotaciones fuera del recorte.
-- Ojo con: `image_size` usado por export/padding/`required_padding`/hit-test, los pixelados y las
-  lupas (siguen leyendo el bitmap COMPLETO), `view_layout` del lienzo, el sidecar JSON (`crop`
-  opcional, proyectos viejos sin esa clave deben abrir igual).
-
-### 3.2 Resaltador (highlighter) — HECHO (ver `arquitectura-anotar.md`, "Resaltador")
-- Nueva anotacion `Highlight(id, rect, color=None, opacity)` con relleno semitransparente sobre texto
-  (como un marcador fluorescente), esquinas redondeadas opcionales.
-- **Colores estandar de papeleria** (los de un resaltador de Office Depot): amarillo, verde, rosa,
-  naranja, azul claro (valores sugeridos: #FFF200, #7CFC00, #FF69B4, #FFA500, #00BFFF; ajustalos mirando
-  el resultado sobre fondo claro Y oscuro). Fila de muestras para elegir rapido + el selector de color
-  completo para personalizados. Color por defecto en la paleta del documento (campo nuevo en `Palette`).
-- Verifica si resvg soporta `mix-blend-mode: multiply` ANTES de depender de el; si no, usa alfa simple
-  (~0.4) y que el pintor de Qt y el SVG den lo mismo. Mide, no supongas.
-- Valora reutilizar la fila de muestras en los demas selectores de color (`ui/widgets.py`
-  `ColorPickerButton`).
-
-### 3.3 Zoom y desplazamiento del lienzo — HECHO (ver `arquitectura-anotar.md`)
-Hoy la captura se ajusta a la ventana (maximo 2x) y no hay zoom: con capturas 4K se coloca con poca
-precision.
-- Rueda = zoom hacia el cursor; arrastrar con boton central (o espacio + arrastrar) = desplazar;
-  botones "Ajustar" y "100%". El zoom es de VISTA: no cambia el export.
-- `AnnotateCanvas.view_layout()` es el unico lugar que convierte pantalla <-> imagen
-  (`view_to_image` / `image_to_view`); incorporar ahi zoom y desplazamiento y todo lo demas (hit-test,
-  tolerancia de clic, asas, seleccion) hereda. La tolerancia ya se convierte con la escala de vista.
-- Cuidado con el recorte de pantalla a "lo que se exportaria" (`setClipRect` en `paintEvent`) y con el
-  margen extra.
-
-### 3.4 Foco (spotlight) con dos modos: oscurecer o desenfocar
-El usuario pidio el desenfoque SOLO para este caso: destacar una zona y desenfocar el resto.
-- Anotacion `Spotlight(id, rect, shape, mode, strength)`; `shape` rectangular/redondeada/ovalada;
-  `mode` = OSCURECER (capa oscura semitransparente fuera de la zona) o DESENFOCAR (blur gaussiano fuera
-  de la zona, con `ImageFilter.GaussianBlur`; el radio escala con `style_scale`).
-- **Un solo foco por documento** (varios huecos = union; complica sin aportar). Crear uno nuevo
-  reemplaza el anterior.
-- Se aplica al BITMAP, como el pixelado (`core/annotate/raster.py`), en este orden:
-  pixelados -> recortes de lupa -> foco -> anotaciones. Asi las anotaciones y las lupas quedan nitidas
-  encima. Debe estar en el SVG exportado igual que en pantalla.
-- **Advertir en la interfaz que el desenfoque NO es para ocultar datos confidenciales** (para eso es
-  Pixelar). El desenfoque es solo enfasis visual.
+### 3.2 Otros (no pedidos; solo si el usuario los retoma)
+- Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
+- Que un Paso nuevo herede el estilo del ultimo Paso; asas de tamano en el lienzo para el Paso.
+- La marca no cubre tipografia ni algunos colores internos (presets de texto de Anotar, resaltador rapido): se
+  agregarian como colores con nombre en `core/brand.py::Brand`.
+- El color de marca del lapiz/flecha/recuadro (`#621132`, vino) casi no se ve sobre capturas OSCURAS: se cambia
+  el color del trazo o se ajusta la marca.
 
 ## 4. Trampas tecnicas (cada una costo tiempo)
 
-- **Herramienta Bash**: los heredocs con comillas triples simples (`'''`) o con apostrofes sueltos hacen
-  que el analizador del comando falle ("unexpected EOF"). Escribe los scripts de parche con la
-  herramienta Write en el scratchpad y ejecutalos. Los parches usan una funcion `patch(path, pairs)`
-  que verifica `count == 1` y solo escribe si TODOS los reemplazos coinciden (si falla, no deja cambios a
-  medias).
-- **`QT_QPA_PLATFORM=offscreen` en Windows no tiene fuentes**: el texto sale como cuadritos, incluidos los
-  botones. Para MIRAR la interfaz, renderiza con la plataforma real (`app.platformName() == "windows"`) y
-  usa `widget.grab()`; no necesita que la ventana sea visible. Los tests si usan offscreen.
-- **Un dialogo modal cuelga pytest.** `tests/conftest.py` ya parchea `AnnotateTab._ask_discard`.
-  Corre siempre `timeout 100 ./.venv/Scripts/python.exe -m pytest tests/ -q`. Si agregas otro dialogo
-  modal, haz lo mismo.
-- **La pantalla debe mostrar lo que se exporta.** El lienzo recorta lo dibujado al area exportada
-  (imagen + margen). Una vez la pantalla prometia un resplandor que el PNG recortaba.
+- **Herramienta Bash**: los heredocs con comillas triples simples o con ciertos caracteres hacen que el analizador
+  del comando falle ("unexpected EOF"), y los escapes `\n` dentro de un heredoc de Python se convierten en
+  saltos de linea reales. Escribe los scripts de parche con la herramienta Write en el scratchpad y ejecutalos.
+  Los parches usan una funcion `patch(path, pairs)` que verifica `count == 1` y solo escribe si TODOS los
+  reemplazos coinciden (si falla, no deja cambios a medias). Escribe siempre con `encoding="utf-8"`.
+- **`QT_QPA_PLATFORM=offscreen` en Windows no tiene fuentes**: el texto sale como cuadritos. Para MIRAR la
+  interfaz, renderiza con la plataforma real y usa `widget.grab()`; los tests si usan offscreen.
+  **Los scripts visuales deben poner `COVER_STUDIO_HOME` a una carpeta temporal** (si no, escribirian el
+  `brand.json` y los colores personalizados REALES del usuario). `tests/conftest.py` ya lo hace para los tests.
+- **Un dialogo modal cuelga pytest.** `tests/conftest.py` parchea `AnnotateTab._ask_discard`. Corre siempre
+  `timeout 118 ./.venv/Scripts/python.exe -m pytest tests -q`. En pruebas de dialogos, parchea `exec`.
+- **La barra superior de Anotar esta AL LIMITE de ancho** (minimo de la pestana ~1264 px; pantallas de 1366 px).
+  Agregar un boton la ensancho a 1408 y rompio un test de zoom y las ventanas chicas; la solucion fue que la
+  etiqueta de informacion ceda (`QSizePolicy.Ignored`). Hay un test (`test_la_barra_superior_no_obliga...`).
+- **La pantalla debe mostrar lo que se exporta**: el lienzo recorta lo dibujado al area exportada (imagen + margen).
+- **Una sola geometria para pantalla y SVG**: `primitives.py` alimenta a Qt (`painter.py`) y a resvg (`svg.py`);
+  cualquier primitiva nueva necesita pintor Qt, SVG, `bounds.py` y un test de paridad de pixeles.
+- **Rendimiento**: mide las rutas con entradas patologicas (un trazo de 20000 puntos en zigzag tardaba 54 s antes de
+  `decimate`).
 - **Qt degrada los enums `str, Enum`** a `str` al pasar por `currentData()`: envuelve con `Enum(...)`.
-- **Parametros que chocan con campos**: `edit_selected(text=...)` fallo porque el parametro del metodo se
-  llamaba igual que el campo. Por eso el flag es `_merge` (con guion bajo).
-- **Granularidad del deshacer**: una decision = un paso. Los colores (dialogo modal) y los presets NO se
-  fusionan; las ediciones solo se fusionan si son del MISMO campo (escribir texto, girar un spinbox).
-- **Lambdas conectadas a senales** de un objeto que se destruye imprimen tracebacks; usa metodos
-  enlazados (PySide los desconecta solos).
-- **Aliasing de `self.config`** en `_apply_config_to_widgets` (pestana Portada): se asigna AL FINAL.
-- `resvg_py` no libera el GIL (hilos no aceleran); no usar `cairosvg` (pide libcairo en Windows).
-- Pillow 12.3 sin `raqm` no hace kerning: mide 0.2-0.5% de mas que resvg; Qt mide mejor (0.77 px de error
-  medio). Pillow solo vale por no depender de Qt (hilo de export, CLI, tests).
-- El README debe quedar en UTF-8 (estaba en UTF-16 y la herramienta de escritura lo conservaba).
-- Las anotaciones nuevas tocan SIEMPRE los mismos sitios: `core/annotate/model.py` (dataclass +
-  union `Annotation`), `primitives.py` (primitivas), `svg.py` (si hay primitiva nueva), `io.py`
-  (serializar con `.get(...)` para que proyectos viejos abran), `edit.py` (hit-test/asas/mover),
-  `ui/annotate/controller.py` (herramienta), `panel.py` (propiedades), `painter.py` (pantalla), `tab.py`
-  (boton). Y sus tests en `tests/`.
+- **Parametros que chocan con campos**: por eso el flag de `edit_selected` es `_merge`.
+- **Granularidad del deshacer**: una decision = un paso (un trazo, un cambio de modo, reemplazar el foco = un paso;
+  macro `beginMacro/endMacro` cuando hay varios comandos).
+- **Lambdas conectadas a senales** de un objeto que se destruye imprimen tracebacks; usa metodos enlazados.
+- **`self.config` en `_apply_config_to_widgets`** (Portada): se asigna AL FINAL. `font_family` de la ventana depende
+  de las fuentes instaladas: no compares un `CoverConfig` completo, compara los campos de color.
+- `resvg_py` no libera el GIL; no usar `cairosvg`. Pillow sin `raqm` no hace kerning.
+- Las anotaciones nuevas tocan SIEMPRE los mismos sitios: `core/annotate/model.py` (dataclass + union), `style.py`
+  (constantes), `primitives.py`, `bounds.py`, `svg.py`, `painter.py`, `io.py` (serializar con `.get(...)` y
+  recortes de rango para que proyectos viejos abran), `edit.py` (hit-test/asas/mover/redimensionar),
+  `ui/annotate/controller.py` (herramienta), `panel.py` (pagina de propiedades, indice `_PAGE_*` + rama en `sync`),
+  `tab.py` (boton) y sus tests. Las del bitmap (pixelado, foco) ademas tocan `raster.py` y el pipeline de
+  `tab.refresh` / `svg.build_svg`.
+- Git en Windows avisa "LF will be replaced by CRLF": es solo un aviso.
 
 ## 5. Pendiente aparte (no mezclar con lo anterior)
 
@@ -133,9 +123,9 @@ byte-identico. El usuario decide cuando; no la empieces sin preguntar.
 ## 6. Prompt para pegar al iniciar la sesion
 
 > Continuamos Cover Studio en `D:\repos\cover_studio`. Lee primero `docs/siguiente-sesion.md` (estado,
-> preferencias, trampas y backlog) y luego `docs/arquitectura-anotar.md`. Corre `git status` y los tests.
-> Vamos a trabajar el backlog de la pestana Anotar en este orden, UNA funcion a la vez, con tests y
-> verificacion visual, y dandome el comando de commit despues de cada una (sin Co-Authored-By): 1) recortar
-> captura, 2) resaltador con colores estandar de papeleria y personalizados, 3) zoom y desplazamiento del
-> lienzo, 4) foco con modo oscurecer o desenfocar. Empieza por la 1: dime en pocas lineas tu plan y espera
-> mi visto bueno antes de escribir codigo.
+> preferencias, trampas y pendiente) y luego la seccion relevante de `docs/arquitectura-anotar.md`. Corre
+> `git status`, `git log --oneline -5` y la suite de tests. Lo siguiente es la seccion 3.1: poder cambiar la
+> INTENSIDAD y el GROSOR del Resplandor de las anotaciones (marcador, flecha, paso, lupa y conector, lapiz).
+> Confirma en una linea que "grosor" es el alcance del halo, dime tu plan en pocas lineas y espera mi visto
+> bueno antes de escribir codigo. Trabaja en fases chicas, con tests y verificacion visual en la ventana
+> real, y dame los comandos de commit (sin Co-Authored-By); despues de que commitee, verifica con git.
