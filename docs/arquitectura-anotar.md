@@ -661,3 +661,19 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - La flecha (una sola capa, no anillos): la intensidad multiplica `ARROW_GLOW_OPACITY` y el grosor `ARROW_GLOW_EXTRA`.
 - Rangos (`style.py`): intensidad 10-200 %, grosor 30-300 %. `io.py` recorta al rango y un proyecto viejo abre con 100 %/100 %.
 - Panel: filas "Intensidad" y "Grosor del halo" (`_glow_rows`, con restablecer) visibles solo con el resplandor activo.
+
+### Conector de la lupa: extremos parejos y asas arrastrables
+
+- Automatico (`lens.connector_segments`): lente rectangular = recta entre los LADOS QUE SE MIRAN; si las dos cajas comparten al
+  menos 25 % de ese lado el conector sale perfectamente horizontal/vertical (por la mitad del tramo compartido), si no une la
+  mitad de un lado con la mitad del otro. Sin hueco (se tocan o solapan en las dos direcciones) no hay conector. Circulo
+  (cono de tangentes) y ovalo (recta por los centros) siguen como antes.
+- A mano: `Magnifier.connector_start` / `connector_end` = (u, v), fraccion 0..1 de la caja del origen / del lente, SIEMPRE en el
+  borde (`lens.border_fraction` pega el punto soltado al borde; en ovalos, al perimetro). Al ser fracciones, siguen a la lupa
+  al moverla, redimensionarla o cambiar el zoom. Cada extremo es independiente (`None` = automatico); con cualquiera puesto
+  el conector es UNA sola linea (tambien en lentes circulares). `lens.connector_anchors` da donde estan hoy (asas).
+- Asas `Handle.CONN_START/CONN_END` (circulos azules en el lienzo). El asa lateral del origen a menos de
+  `edit.CONNECTOR_HANDLE_CLEARANCE` (12 px) de un extremo le cede el lugar (las esquinas siguen redimensionando).
+  Un clic sobre la linea del conector selecciona la lupa (`hit_lens_part` -> "connector"; arrastrar mueve todo).
+- Panel: boton "Recolocar conector" (solo con extremos a mano) -> `connector_start/end = None`, un paso de deshacer.
+- Pendiente (no hecho): conector con codo en angulo recto (`connector_route`).

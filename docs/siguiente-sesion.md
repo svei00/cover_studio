@@ -69,6 +69,10 @@ Ver `docs/arquitectura-anotar.md` ("Resplandor ajustable"). Campos `glow_strengt
 resplandor, helper `style.glow_rings`, filas en el panel. Tests: `tests/test_annotate_glow_tuning.py` y `_ui.py`.
 Verificado a ojo sobre fondo claro y oscuro.
 
+### 3.1b Conector de la lupa movible: HECHO (sin commitear al escribir esto)
+Ver `docs/arquitectura-anotar.md` ("Conector de la lupa"). Tests: `tests/test_annotate_lens_connector_edit.py`.
+Falta, si Svei lo retoma: conector con CODO en angulo recto (el pidio "lo del codo" pero acepto la recta primero).
+
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
 - Que un Paso nuevo herede el estilo del ultimo Paso; asas de tamano en el lienzo para el Paso.
