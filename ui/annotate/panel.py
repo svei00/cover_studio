@@ -609,6 +609,9 @@ class PropertiesPanel(QWidget):
         self._field_row(form, "Esquinas", self._hl_radius, "radius", HIGHLIGHT_RADIUS)
         return page
 
+    def _reset_lens_connector(self) -> None:
+        self._c.edit_selected(_merge=False, connector_start=None, connector_end=None)
+
     def _reset_marker_arrow(self) -> None:
         self._c.edit_selected(_merge=False, arrow=ArrowSide.AUTO, arrow_start=None, arrow_tip=None)
 
@@ -888,6 +891,11 @@ class PropertiesPanel(QWidget):
         self._lens_connector_width_row = self._field_row(form, "Grosor", self._lens_connector_width, "connector_width", None)
         self._lens_connector_style = self._line_style_combo("connector_style")
         self._lens_connector_style_row = self._field_row(form, "Estilo", self._lens_connector_style, "connector_style", LineStyle.SOLID)
+        self._lens_connector_reset = QPushButton("Recolocar conector")
+        self._lens_connector_reset.setToolTip(
+            "Devuelve el conector a su posicion automatica. Para moverlo, arrastra los circulos azules de sus extremos.")
+        self._lens_connector_reset.clicked.connect(self._reset_lens_connector)
+        form.addRow(self._lens_connector_reset)
 
         self._section(form, "Resplandor")
         self._lens_glow = QCheckBox("Resplandor del lente")
@@ -1052,6 +1060,7 @@ class PropertiesPanel(QWidget):
                 for row in (self._lens_connector_header, self._lens_connector_color,
                             self._lens_connector_width_row, self._lens_connector_style_row):
                     self._lens_form.setRowVisible(row, item.connector)
+                self._lens_form.setRowVisible(self._lens_connector_reset, item.connector and item.custom_connector)
                 self._lens_glow.setChecked(item.glow)
                 self._lens_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._lens_connector_glow.setChecked(item.connector_glow)

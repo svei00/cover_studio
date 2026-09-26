@@ -83,6 +83,7 @@ _HANDLE_CURSORS = {
     edit.Handle.E: Qt.SizeHorCursor, edit.Handle.W: Qt.SizeHorCursor,
     edit.Handle.START: Qt.CrossCursor, edit.Handle.END: Qt.CrossCursor,
     edit.Handle.LENS: Qt.SizeFDiagCursor,
+    edit.Handle.CONN_START: Qt.CrossCursor, edit.Handle.CONN_END: Qt.CrossCursor,
 }
 
 

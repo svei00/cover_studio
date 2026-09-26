@@ -43,7 +43,11 @@ class Handle(str, Enum):
     START = "start"
     END = "end"
     LENS = "lens"
+    CONN_START = "conn_start"   # extremo del conector de la lupa que toca el origen
+    CONN_END = "conn_end"       # el que toca el lente
 
+
+CONNECTOR_HANDLE_CLEARANCE = 12.0   # px de la imagen: un asa lateral del origen tan cerca de un extremo del conector le cede el lugar
 
 _WEST = (Handle.NW, Handle.W, Handle.SW)
 _EAST = (Handle.NE, Handle.E, Handle.SE)
@@ -137,11 +141,13 @@ def hit_item(
 
 def hit_lens_part(m: Magnifier, p: Point, tol: float) -> str | None:
     """Que parte de la lupa esta bajo el punto: 'lens' (el cuerpo del lente, gana si
-    se solapan) o 'source' (el borde de la zona de origen)."""
+    se solapan), 'source' (el borde de la zona de origen) o 'connector' (la linea que los une)."""
     if lens.contains_in_lens(m, p):
         return "lens"
     if lens.near_source_border(m, p, tol):
         return "source"
+    if any(distance_to_segment(p, a, b) <= tol for a, b in lens.connector_segments(m)):
+        return "connector"
     return None
 
 
@@ -171,7 +177,8 @@ def rect_handles(r: Rect) -> dict[Handle, Point]:
 
 def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle, Point]:
     """Asas de redimensionado: 8 para rectangulos, 2 para flechas, para la lupa
-    las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom. Un marcador
+    las 8 de su origen mas una (LENS) en la esquina del lente que cambia el zoom, y los dos extremos de su conector
+    (CONN_START y CONN_END; donde coinciden con un asa lateral del origen, esta cede su lugar). Un marcador
     con flecha suma START (la cola) y END (la punta) de la flecha, que se pueden arrastrar."""
     if isinstance(item, Marker):
         handles = rect_handles(item.rect)
@@ -187,6 +194,12 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
         handles = rect_handles(lens.effective_source(item))
         box = lens.lens_rect(item)
         handles[Handle.LENS] = (box.right, box.bottom)
+        anchors = lens.connector_anchors(item)
+        if anchors is not None:
+            for handle in [h for h, pos in handles.items() if h is not Handle.LENS and any(
+                    math.hypot(pos[0] - a[0], pos[1] - a[1]) < CONNECTOR_HANDLE_CLEARANCE for a in anchors)]:
+                del handles[handle]
+            handles[Handle.CONN_START], handles[Handle.CONN_END] = anchors
         return handles
     if isinstance(item, Arrow):
         return {Handle.START: item.start, Handle.END: item.end}
@@ -351,6 +364,10 @@ def _resize_stroke(s: Stroke, handle: Handle, p: Point, min_size: float) -> Stro
 def _resize_lens(m: Magnifier, handle: Handle, p: Point, min_size: float) -> Magnifier:
     """El asa LENS cambia el zoom anclando la esquina superior izquierda del lente;
     las demas redimensionan la zona de origen."""
+    if handle is Handle.CONN_START:
+        return replace(m, connector_start=lens.border_fraction(lens.effective_source(m), lens.is_round(m), p))
+    if handle is Handle.CONN_END:
+        return replace(m, connector_end=lens.border_fraction(lens.lens_rect(m), lens.is_round(m), p))
     if handle is not Handle.LENS:
         return replace(m, source=resize_rect(lens.effective_source(m), handle, p, min_size))
     box, src = lens.lens_rect(m), lens.effective_source(m)

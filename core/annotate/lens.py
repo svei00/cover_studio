@@ -146,15 +146,101 @@ def _line_segment(src: Rect, lens: Rect, exit_distance) -> list[tuple[Point, Poi
     return [((x1 + ux * t1, y1 + uy * t1), (x2 - ux * t2, y2 - uy * t2))]
 
 
+MIN_FACING_OVERLAP = 0.25   # fraccion del lado menor que deben compartir dos cajas para unirlas con una recta pareja
+
+
+def _overlap_middle(a0: float, a1: float, b0: float, b1: float) -> float | None:
+    """Mitad del tramo que comparten dos intervalos, si es de buen tamano; si no, None."""
+    low, high = max(a0, b0), min(a1, b1)
+    if high - low >= MIN_FACING_OVERLAP * min(a1 - a0, b1 - b0) and high > low:
+        return (low + high) / 2
+    return None
+
+
+def _facing_anchors(src: Rect, box: Rect) -> tuple[Point, Point] | None:
+    """Extremos del conector de un lente rectangular: salen de los lados que se miran. Si las dos cajas comparten un
+    tramo de ese lado el conector es PAREJO (horizontal o vertical, por la mitad del tramo compartido); si no, une la mitad
+    de un lado con la mitad del otro. None si las cajas se tocan o se solapan en las dos direcciones (no cabe)."""
+    dx, dy = box.center[0] - src.center[0], box.center[1] - src.center[1]
+    gap_x = (box.x - src.right) if dx >= 0 else (src.x - box.right)
+    gap_y = (box.y - src.bottom) if dy >= 0 else (src.y - box.bottom)
+    if gap_x <= 0 and gap_y <= 0:
+        return None
+    if gap_x >= gap_y:   # uno a la derecha o a la izquierda del otro
+        y = _overlap_middle(src.y, src.bottom, box.y, box.bottom)
+        ya, yb = (y, y) if y is not None else (src.center[1], box.center[1])
+        return ((src.right, ya), (box.x, yb)) if dx >= 0 else ((src.x, ya), (box.right, yb))
+    x = _overlap_middle(src.x, src.right, box.x, box.right)
+    xa, xb = (x, x) if x is not None else (src.center[0], box.center[0])
+    return ((xa, src.bottom), (xb, box.y)) if dy >= 0 else ((xa, src.y), (xb, box.bottom))
+
+
+def is_round(m: Magnifier) -> bool:
+    return m.shape in (LensShape.CIRCLE, LensShape.ELLIPSE)
+
+
+def border_fraction(rect: Rect, round_shape: bool, p: Point) -> tuple[float, float]:
+    """El punto del borde de la caja (o del ovalo inscrito) mas cercano a `p`, como fraccion (u, v) de la caja."""
+    if rect.w <= 0 or rect.h <= 0:
+        return 0.5, 0.5
+    cx, cy = rect.center
+    if round_shape:
+        ux, uy = p[0] - cx, p[1] - cy
+        n = math.hypot(ux, uy)
+        ux, uy = (ux / n, uy / n) if n > 1e-9 else (1.0, 0.0)
+        t = _ellipse_exit_distance(rect, ux, uy)
+        x, y = cx + ux * t, cy + uy * t
+    else:
+        x, y = min(max(p[0], rect.x), rect.right), min(max(p[1], rect.y), rect.bottom)   # fuera de la caja: ya cae en su borde
+        if rect.x < p[0] < rect.right and rect.y < p[1] < rect.bottom:   # dentro: se manda al lado mas cercano
+            to_edges = {"l": x - rect.x, "r": rect.right - x, "t": y - rect.y, "b": rect.bottom - y}
+            side = min(to_edges, key=to_edges.get)
+            x, y = {"l": (rect.x, y), "r": (rect.right, y), "t": (x, rect.y), "b": (x, rect.bottom)}[side]
+    return (x - rect.x) / rect.w, (y - rect.y) / rect.h
+
+
+def _from_fraction(rect: Rect, frac: tuple[float, float]) -> Point:
+    return rect.x + frac[0] * rect.w, rect.y + frac[1] * rect.h
+
+
+def _auto_anchors(m: Magnifier) -> tuple[Point, Point] | None:
+    """Extremos del conector automatico (el del origen, el del lente) o None si no cabe."""
+    src, box = effective_source(m), lens_rect(m)
+    if m.shape is LensShape.ROUNDED:
+        return _facing_anchors(src, box)
+    seg = _line_segment(src, box, _ellipse_exit_distance if m.shape is LensShape.ELLIPSE else _circle_exit_distance)
+    return seg[0] if seg else None
+
+
+def _circle_exit_distance(rect: Rect, ux: float, uy: float) -> float:
+    return rect.w / 2
+
+
+def connector_anchors(m: Magnifier) -> tuple[Point, Point] | None:
+    """Donde estan HOY los dos extremos del conector (los puestos a mano, o los automaticos): son donde van las asas.
+    None si la lupa no lleva conector o no cabe."""
+    if not m.connector:
+        return None
+    auto = _auto_anchors(m) if not (m.connector_start is not None and m.connector_end is not None) else None
+    src, box = effective_source(m), lens_rect(m)
+    a = _from_fraction(src, m.connector_start) if m.connector_start is not None else (auto[0] if auto else None)
+    b = _from_fraction(box, m.connector_end) if m.connector_end is not None else (auto[1] if auto else None)
+    if a is None or b is None or math.hypot(b[0] - a[0], b[1] - a[1]) < 1.0:
+        return None
+    return a, b
+
+
 def connector_segments(m: Magnifier) -> list[tuple[Point, Point]]:
     if not m.connector:
         return []
-    src, lens = effective_source(m), lens_rect(m)
+    if m.custom_connector:
+        anchors = connector_anchors(m)
+        return [anchors] if anchors else []
+    src, box = effective_source(m), lens_rect(m)
     if m.shape is LensShape.CIRCLE:
-        return _tangent_segments(src.center, src.w / 2, lens.center, lens.w / 2)
-    if m.shape is LensShape.ELLIPSE:
-        return _line_segment(src, lens, _ellipse_exit_distance)
-    return _line_segment(src, lens, _exit_distance)
+        return _tangent_segments(src.center, src.w / 2, box.center, box.w / 2)   # el cono de siempre
+    anchors = _auto_anchors(m)
+    return [anchors] if anchors else []
 
 
 # --------------------------------------------------------------------------

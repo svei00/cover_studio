@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -44,7 +45,7 @@ def test_hit_test_encuentra_la_lupa_por_cualquiera_de_sus_partes():
 
 
 def test_la_lupa_tiene_nueve_asas_y_la_del_lente_esta_en_su_esquina():
-    handles = edit.item_handles(M)
+    handles = edit.item_handles(replace(M, connector=False))   # con conector suma las dos de sus extremos (test_annotate_lens_connector_edit)
     assert len(handles) == 9
     box = lens.lens_rect(M)
     assert handles[edit.Handle.LENS] == (box.right, box.bottom)

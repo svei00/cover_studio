@@ -323,9 +323,15 @@ class AnnotateCanvas(QWidget):
         painter.setPen(QPen(QColor(CARD_FILL), 1.5))
         painter.setBrush(QColor("#FFFFFF"))
         half = HANDLE_PX / 2
-        for point in handles.values():
+        for handle, point in handles.items():
             c = self.image_to_view(point)
-            painter.drawRect(QRectF(c.x() - half, c.y() - half, HANDLE_PX, HANDLE_PX))
+            box = QRectF(c.x() - half, c.y() - half, HANDLE_PX, HANDLE_PX)
+            if handle in (edit.Handle.CONN_START, edit.Handle.CONN_END):   # los del conector son redondos y de otro color
+                painter.setBrush(QColor(SELECTION_COLOR))
+                painter.drawEllipse(box)
+                painter.setBrush(QColor("#FFFFFF"))
+            else:
+                painter.drawRect(box)
 
     # ------------------------------------------------------------------
     # Mouse y teclado

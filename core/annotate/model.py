@@ -245,6 +245,15 @@ class Magnifier:
     connector_glow: bool = False          # resplandor del conector (su color es `glow_color`, el del lente)
     glow_strength: float = DEFAULT_GLOW_STRENGTH   # intensidad y alcance del resplandor del lente Y del conector
     glow_size: float = DEFAULT_GLOW_SIZE
+    # extremos del conector puestos a mano: posicion (u, v) en el borde de la caja del origen / del lente, como
+    # fraccion de esa caja (0..1), para que sigan a la lupa al moverla, redimensionarla o cambiar el zoom.
+    # None = el automatico.
+    connector_start: tuple[float, float] | None = None
+    connector_end: tuple[float, float] | None = None
+
+    @property
+    def custom_connector(self) -> bool:
+        return self.connector_start is not None or self.connector_end is not None
 
 
 @dataclass(frozen=True)
