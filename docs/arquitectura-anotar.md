@@ -676,4 +676,12 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   `edit.CONNECTOR_HANDLE_CLEARANCE` (12 px) de un extremo le cede el lugar (las esquinas siguen redimensionando).
   Un clic sobre la linea del conector selecciona la lupa (`hit_lens_part` -> "connector"; arrastrar mueve todo).
 - Panel: boton "Recolocar conector" (solo con extremos a mano) -> `connector_start/end = None`, un paso de deshacer.
-- Pendiente (no hecho): conector con codo en angulo recto (`connector_route`).
+- Trazado en codo: `Magnifier.connector_route` (`ConnectorRoute.STRAIGHT` por defecto / `ELBOW`; selector "Trazado" en el
+  panel). `lens.orthogonal_path(a, da, b, db)` arma el camino con tramos horizontales/verticales: Z si los dos extremos salen
+  en el mismo eje y se miran (tramo del medio a la mitad), L si uno sale horizontal y el otro vertical, y si miran al mismo
+  lado el codo sale `ELBOW_CLEARANCE` (20 px) de los dos. `da`/`db` = lado del que sale cada extremo (`_exit_direction`).
+  En codo los ovalos salen por los puntos de sus ejes (mitades de los lados de su caja), no por la linea de centros. Alineados
+  se reduce a una recta de 2 puntos (se dibuja como `PLine`).
+- Dibujo: el codo es UN solo trazo `PPath` (puntos, inglete, rayas opcionales; Qt + SVG + cotas en `bounds.py`), por eso la
+  esquina no tiene muesca y el resplandor translucido no se aclara donde se juntan los tramos. `connector_segments` devuelve
+  sus pares consecutivos (clic y cotas siguen funcionando). Las asas quedan en los extremos del camino.

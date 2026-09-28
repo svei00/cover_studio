@@ -71,7 +71,7 @@ Verificado a ojo sobre fondo claro y oscuro.
 
 ### 3.1b Conector de la lupa movible: HECHO (sin commitear al escribir esto)
 Ver `docs/arquitectura-anotar.md` ("Conector de la lupa"). Tests: `tests/test_annotate_lens_connector_edit.py`.
-Falta, si Svei lo retoma: conector con CODO en angulo recto (el pidio "lo del codo" pero acepto la recta primero).
+El CODO en angulo recto tambien esta hecho (`connector_route`, `PPath`; `tests/test_annotate_lens_connector_elbow.py`).
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
