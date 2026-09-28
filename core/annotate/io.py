@@ -50,6 +50,7 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    ConnectorRoute,
     Highlight,
     HeadStyle,
     HighlightMode,
@@ -231,7 +232,8 @@ def item_to_dict(item: Annotation) -> dict:
                 "connector_glow": item.connector_glow, "glow_strength": item.glow_strength,
                 "glow_size": item.glow_size,
                 "connector_start": None if item.connector_start is None else list(item.connector_start),
-                "connector_end": None if item.connector_end is None else list(item.connector_end)}
+                "connector_end": None if item.connector_end is None else list(item.connector_end),
+                "connector_route": item.connector_route.value}
     if isinstance(item, Stroke):
         return {"type": "stroke", "id": item.id, "points": [[x, y] for x, y in item.points], "color": item.color,
                 "mode": item.mode.value, "width": item.width, "opacity": item.opacity, "glow": item.glow,
@@ -308,6 +310,7 @@ def item_from_dict(data: dict) -> Annotation:
                 data.get("connector_glow") is True,
                 _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
                 _fraction_or_none(data.get("connector_start")), _fraction_or_none(data.get("connector_end")),
+                _enum_or_default(ConnectorRoute, data.get("connector_route"), ConnectorRoute.STRAIGHT),
             )
         if kind == "stroke":
             return Stroke(

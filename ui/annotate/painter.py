@@ -11,7 +11,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPolygonF
 
 from core.annotate import style
-from core.annotate.primitives import PCircle, PEllipse, PImage, PLine, PPolygon, PPolyline, PRect, PText, Primitive
+from core.annotate.primitives import PCircle, PEllipse, PImage, PLine, PPath, PPolygon, PPolyline, PRect, PText, Primitive
 
 _FAMILIES = [name.strip() for name in style.FONT.split(",")]
 
@@ -108,6 +108,11 @@ def paint_primitives(
                 painter.setCompositionMode(QPainter.CompositionMode_Multiply)
             painter.strokePath(path, QPen(_color(p.stroke, p.opacity), p.width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        elif isinstance(p, PPath):
+            path = QPainterPath(QPointF(*p.points[0]))
+            for point in p.points[1:]:
+                path.lineTo(QPointF(*point))
+            painter.strokePath(path, _pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
         elif isinstance(p, PLine):
             painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))
             painter.drawLine(QPointF(*p.a), QPointF(*p.b))

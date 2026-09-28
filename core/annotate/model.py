@@ -77,6 +77,11 @@ class LensShape(str, Enum):
     ROUNDED = "rounded"    # rectangular; las esquinas se ajustan con `corner`
 
 
+class ConnectorRoute(str, Enum):
+    STRAIGHT = "straight"   # una recta entre los dos extremos
+    ELBOW = "elbow"         # tramos horizontales y verticales (con uno o dos codos en angulo recto)
+
+
 @dataclass(frozen=True)
 class Rect:
     x: float
@@ -250,6 +255,7 @@ class Magnifier:
     # None = el automatico.
     connector_start: tuple[float, float] | None = None
     connector_end: tuple[float, float] | None = None
+    connector_route: ConnectorRoute = ConnectorRoute.STRAIGHT
 
     @property
     def custom_connector(self) -> bool:

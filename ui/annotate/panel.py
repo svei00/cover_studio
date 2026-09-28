@@ -32,6 +32,7 @@ from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
 from core.annotate.model import (
     Arrow,
     ArrowSide,
+    ConnectorRoute,
     HeadStyle,
     Highlight,
     HighlightMode,
@@ -114,6 +115,7 @@ LINE_STYLE_LABELS = {
     LineStyle.DOTTED: "De puntos",
     LineStyle.DASH_DOT: "Raya y punto",
 }
+CONNECTOR_ROUTE_LABELS = {ConnectorRoute.STRAIGHT: "Recto", ConnectorRoute.ELBOW: "Con codo"}
 HEAD_LABELS = {HeadStyle.NONE: "Sin punta", HeadStyle.ARROW: "Flecha", HeadStyle.DOT: "Punto"}
 STEP_SHAPE_LABELS = {
     StepShape.CIRCLE: "Circulo",
@@ -891,6 +893,13 @@ class PropertiesPanel(QWidget):
         self._lens_connector_width_row = self._field_row(form, "Grosor", self._lens_connector_width, "connector_width", None)
         self._lens_connector_style = self._line_style_combo("connector_style")
         self._lens_connector_style_row = self._field_row(form, "Estilo", self._lens_connector_style, "connector_style", LineStyle.SOLID)
+        self._lens_connector_route = QComboBox()
+        for route, label in CONNECTOR_ROUTE_LABELS.items():
+            self._lens_connector_route.addItem(label, route.value)
+        self._lens_connector_route.currentIndexChanged.connect(
+            lambda _i: self._apply(connector_route=ConnectorRoute(self._lens_connector_route.currentData())))
+        self._lens_connector_route_row = self._field_row(
+            form, "Trazado", self._lens_connector_route, "connector_route", ConnectorRoute.STRAIGHT)
         self._lens_connector_reset = QPushButton("Recolocar conector")
         self._lens_connector_reset.setToolTip(
             "Devuelve el conector a su posicion automatica. Para moverlo, arrastra los circulos azules de sus extremos.")
@@ -1058,8 +1067,10 @@ class PropertiesPanel(QWidget):
                 self._set_spin(self._lens_connector_width, item.connector_width or 0.0)
                 self._set_combo(self._lens_connector_style, item.connector_style.value)
                 for row in (self._lens_connector_header, self._lens_connector_color,
-                            self._lens_connector_width_row, self._lens_connector_style_row):
+                            self._lens_connector_width_row, self._lens_connector_style_row,
+                            self._lens_connector_route_row):
                     self._lens_form.setRowVisible(row, item.connector)
+                self._set_combo(self._lens_connector_route, item.connector_route.value)
                 self._lens_form.setRowVisible(self._lens_connector_reset, item.connector and item.custom_connector)
                 self._lens_glow.setChecked(item.glow)
                 self._lens_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)

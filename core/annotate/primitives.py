@@ -133,7 +133,20 @@ class PPolyline:
     blend: str | None = None
 
 
-Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage | PPolyline
+@dataclass(frozen=True)
+class PPath:
+    """Camino abierto de esquinas en inglete (el conector en codo de la lupa): se pinta de un solo trazo, asi que ni la
+    esquina ni las capas translucidas del resplandor se doblan donde se encuentran los tramos."""
+
+    points: tuple[Point, ...]
+    stroke: str
+    width: float
+    opacity: float = 1.0
+    dash: tuple[float, ...] | None = None
+    cap: str = "butt"
+
+
+Primitive = PRect | PLine | PPolygon | PCircle | PEllipse | PText | PImage | PPolyline | PPath
 
 
 # --------------------------------------------------------------------------
@@ -413,6 +426,24 @@ def highlight_primitives(h: Highlight, scale: float, palette: Palette = BRAND_PA
     ]
 
 
+def _connector_parts(m: Magnifier) -> list[tuple[Point, ...]]:
+    """Lo que se dibuja del conector: una lista de caminos (de 2 puntos = una recta). Recto: una recta, o las dos
+    tangentes del circulo; en codo: UN camino con sus esquinas."""
+    path = lens.connector_path(m)
+    if len(path) > 2:
+        return [tuple(path)]
+    return [(a, b) for a, b in lens.connector_segments(m)]
+
+
+def _connector_line(
+    part: tuple[Point, ...], stroke: str, width: float, opacity: float,
+    dash: tuple[float, ...] | None = None, cap: str = "butt",
+) -> Primitive:
+    if len(part) == 2:
+        return PLine(part[0], part[1], stroke, width, opacity, dash, cap)
+    return PPath(part, stroke, width, opacity, dash, cap)
+
+
 def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
     """Contorno del origen, conector, imagen del lente y su marco. Cada trazo de color lleva
     debajo uno navy mas ancho (continuo) para que se lea sobre capturas claras. Marco, origen y
@@ -425,6 +456,7 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
     src_w = m.source_width if m.source_width is not None else fw / 2        # origen (2 por defecto)
     con_color = m.connector_color or frame
     con_w = m.connector_width if m.connector_width is not None else fw / 2  # conector (2 por defecto)
+    connector_parts = _connector_parts(m)
     src_dash, src_cap = dash_pattern(m.source_style, src_w * scale)
     con_dash, con_cap = dash_pattern(m.connector_style, con_w * scale)
     frame_dash, frame_cap = dash_pattern(m.frame_style, fw * scale)
@@ -451,10 +483,10 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
         # y la misma progresion que los anillos del resplandor del lente; llevan las rayas del conector y van
         # debajo de su contorno navy y de su trazo de color
         glow_color = m.glow_color or palette.glow
-        for a, b in lens.connector_segments(m):
+        for part in connector_parts:
             for off, op in reversed(style.glow_rings(m.glow_strength, m.glow_size)):
-                out.append(PLine(
-                    a, b, glow_color, con_w * scale + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH,
+                out.append(_connector_line(
+                    part, glow_color, con_w * scale + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH,
                     con_dash, con_cap,
                 ))
 
@@ -468,9 +500,9 @@ def magnifier_primitives(m: Magnifier, scale: float, palette: Palette = BRAND_PA
         out.append(PRect(src, style.CARD_FILL, sw, 0.6, 3 * scale))
         out.append(PRect(src, src_color, src_w * scale, 1.0, 3 * scale, dash=src_dash, cap=src_cap))
 
-    for a, b in lens.connector_segments(m):
-        out.append(PLine(a, b, style.CARD_FILL, (con_w + 2) * scale, 0.6))
-        out.append(PLine(a, b, con_color, con_w * scale, 1.0, con_dash, con_cap))
+    for part in connector_parts:
+        out.append(_connector_line(part, style.CARD_FILL, (con_w + 2) * scale, 0.6))
+        out.append(_connector_line(part, con_color, con_w * scale, 1.0, con_dash, con_cap))
 
     out.append(PImage(m.id, box, m.shape.value, rx))
     if m.shape is LensShape.CIRCLE:

@@ -14,6 +14,7 @@ from core.annotate.primitives import (
     PImage,
     PLine,
     PPolygon,
+    PPath,
     PPolyline,
     PRect,
     Primitive,
@@ -27,7 +28,7 @@ def primitive_bounds(p: Primitive) -> Rect | None:
     """Caja que ocupa una primitiva incluyendo el grosor de su trazo (el texto no cuenta)."""
     if isinstance(p, PRect):
         return p.rect.inflate(p.width / 2) if p.stroke else p.rect
-    if isinstance(p, PPolyline):
+    if isinstance(p, (PPolyline, PPath)):
         x, y, w, h = freehand.bounding_box(p.points)
         return Rect(x, y, w, h).inflate(p.width / 2)
     if isinstance(p, PLine):

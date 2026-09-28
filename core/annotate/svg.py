@@ -19,6 +19,7 @@ from core.annotate.primitives import (
     PImage,
     PLine,
     PPolygon,
+    PPath,
     PPolyline,
     PRect,
     PText,
@@ -90,6 +91,12 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
             f'<polyline points="{pts}" fill="none" stroke="{p.stroke}" stroke-width="{_f(p.width)}" '
             f'stroke-opacity="{min(max(p.opacity, 0.0), 1.0):.2f}" stroke-linecap="round" '
             f'stroke-linejoin="round"{blend}/>'
+        )
+    if isinstance(p, PPath):
+        pts = " ".join(f"{_f(x)},{_f(y)}" for x, y in p.points)
+        return (
+            f'<polyline points="{pts}" fill="none" stroke="{p.stroke}" stroke-width="{_f(p.width)}" '
+            f'stroke-opacity="{p.opacity}" stroke-linejoin="miter"{_dash(p.dash, p.cap)}/>'
         )
     if isinstance(p, PLine):
         return (

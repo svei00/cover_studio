@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from core.annotate.model import LensShape, Magnifier, Rect
+from core.annotate.model import ConnectorRoute, LensShape, Magnifier, Rect
 from core.annotate.style import DEFAULT_LENS_CORNER
 
 Point = tuple[float, float]
@@ -157,20 +157,21 @@ def _overlap_middle(a0: float, a1: float, b0: float, b1: float) -> float | None:
     return None
 
 
-def _facing_anchors(src: Rect, box: Rect) -> tuple[Point, Point] | None:
+def _facing_anchors(src: Rect, box: Rect, share: bool = True) -> tuple[Point, Point] | None:
     """Extremos del conector de un lente rectangular: salen de los lados que se miran. Si las dos cajas comparten un
     tramo de ese lado el conector es PAREJO (horizontal o vertical, por la mitad del tramo compartido); si no, une la mitad
-    de un lado con la mitad del otro. None si las cajas se tocan o se solapan en las dos direcciones (no cabe)."""
+    de un lado con la mitad del otro. `share` False = siempre las mitades (los ovalos solo tocan su caja ahi). None si las
+    cajas se tocan o se solapan en las dos direcciones (no cabe)."""
     dx, dy = box.center[0] - src.center[0], box.center[1] - src.center[1]
     gap_x = (box.x - src.right) if dx >= 0 else (src.x - box.right)
     gap_y = (box.y - src.bottom) if dy >= 0 else (src.y - box.bottom)
     if gap_x <= 0 and gap_y <= 0:
         return None
     if gap_x >= gap_y:   # uno a la derecha o a la izquierda del otro
-        y = _overlap_middle(src.y, src.bottom, box.y, box.bottom)
+        y = _overlap_middle(src.y, src.bottom, box.y, box.bottom) if share else None
         ya, yb = (y, y) if y is not None else (src.center[1], box.center[1])
         return ((src.right, ya), (box.x, yb)) if dx >= 0 else ((src.x, ya), (box.right, yb))
-    x = _overlap_middle(src.x, src.right, box.x, box.right)
+    x = _overlap_middle(src.x, src.right, box.x, box.right) if share else None
     xa, xb = (x, x) if x is not None else (src.center[0], box.center[0])
     return ((xa, src.bottom), (xb, box.y)) if dy >= 0 else ((xa, src.y), (xb, box.bottom))
 
@@ -208,6 +209,8 @@ def _auto_anchors(m: Magnifier) -> tuple[Point, Point] | None:
     src, box = effective_source(m), lens_rect(m)
     if m.shape is LensShape.ROUNDED:
         return _facing_anchors(src, box)
+    if m.connector_route is ConnectorRoute.ELBOW:   # los ovalos salen por los puntos de sus ejes (los de sus lados)
+        return _facing_anchors(src, box, share=False)
     seg = _line_segment(src, box, _ellipse_exit_distance if m.shape is LensShape.ELLIPSE else _circle_exit_distance)
     return seg[0] if seg else None
 
@@ -233,6 +236,9 @@ def connector_anchors(m: Magnifier) -> tuple[Point, Point] | None:
 def connector_segments(m: Magnifier) -> list[tuple[Point, Point]]:
     if not m.connector:
         return []
+    if m.connector_route is ConnectorRoute.ELBOW:
+        path = connector_path(m)
+        return list(zip(path, path[1:]))
     if m.custom_connector:
         anchors = connector_anchors(m)
         return [anchors] if anchors else []
@@ -241,6 +247,66 @@ def connector_segments(m: Magnifier) -> list[tuple[Point, Point]]:
         return _tangent_segments(src.center, src.w / 2, box.center, box.w / 2)   # el cono de siempre
     anchors = _auto_anchors(m)
     return [anchors] if anchors else []
+
+
+ELBOW_CLEARANCE = 20.0   # cuanto sale el codo del borde cuando los dos extremos miran al mismo lado
+
+
+def _exit_direction(rect: Rect, round_shape: bool, p: Point) -> tuple[int, int]:
+    """Direccion (de eje) hacia afuera de la caja o del ovalo en el punto `p` de su borde."""
+    if round_shape:
+        dx, dy = (p[0] - rect.center[0]) / max(rect.w / 2, 1e-9), (p[1] - rect.center[1]) / max(rect.h / 2, 1e-9)
+        if abs(dx) >= abs(dy):
+            return (1 if dx >= 0 else -1), 0
+        return 0, (1 if dy >= 0 else -1)
+    sides = {(-1, 0): p[0] - rect.x, (1, 0): rect.right - p[0], (0, -1): p[1] - rect.y, (0, 1): rect.bottom - p[1]}
+    return min(sides, key=sides.get)   # el lado mas cercano (en una esquina gana el horizontal)
+
+
+def _simplify(points: list[Point]) -> list[Point]:
+    """Sin puntos repetidos ni puntos de en medio de un tramo recto."""
+    out: list[Point] = []
+    for p in points:
+        if out and math.hypot(p[0] - out[-1][0], p[1] - out[-1][1]) < 1e-6:
+            continue
+        while len(out) >= 2 and ((out[-2][0] == out[-1][0] == p[0]) or (out[-2][1] == out[-1][1] == p[1])):
+            out.pop()
+        out.append(p)
+    return out
+
+
+def orthogonal_path(a: Point, da: tuple[int, int], b: Point, db: tuple[int, int]) -> list[Point]:
+    """Camino de a a b con tramos horizontales y verticales. `da` y `db` son las direcciones hacia afuera de la forma en
+    cada extremo: el camino sale de `a` hacia `da` y llega a `b` desde `db`."""
+    horizontal_a, horizontal_b = da[0] != 0, db[0] != 0
+    if horizontal_a and horizontal_b:   # Z: sale y llega en horizontal
+        if da == db:   # los dos miran al mismo lado: el tramo del medio queda fuera de los dos
+            mx = (max(a[0], b[0]) + ELBOW_CLEARANCE) if da[0] > 0 else (min(a[0], b[0]) - ELBOW_CLEARANCE)
+        else:
+            mx = (a[0] + b[0]) / 2
+        return _simplify([a, (mx, a[1]), (mx, b[1]), b])
+    if not horizontal_a and not horizontal_b:   # Z: sale y llega en vertical
+        if da == db:
+            my = (max(a[1], b[1]) + ELBOW_CLEARANCE) if da[1] > 0 else (min(a[1], b[1]) - ELBOW_CLEARANCE)
+        else:
+            my = (a[1] + b[1]) / 2
+        return _simplify([a, (a[0], my), (b[0], my), b])
+    if horizontal_a:   # L: sale en horizontal y llega en vertical
+        return _simplify([a, (b[0], a[1]), b])
+    return _simplify([a, (a[0], b[1]), b])
+
+
+def connector_path(m: Magnifier) -> list[Point]:
+    """Puntos del conector en codo (vacio si no hay conector o no es en codo). Con los extremos alineados se reduce a
+    una recta de dos puntos."""
+    if not m.connector or m.connector_route is not ConnectorRoute.ELBOW:
+        return []
+    anchors = connector_anchors(m)
+    if anchors is None:
+        return []
+    a, b = anchors
+    src, box, round_shape = effective_source(m), lens_rect(m), is_round(m)
+    return orthogonal_path(a, _exit_direction(src, round_shape, a), b, _exit_direction(box, round_shape, b))
 
 
 # --------------------------------------------------------------------------
