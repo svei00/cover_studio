@@ -127,6 +127,11 @@ caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (
   `ui/annotate/controller.py` (herramienta), `panel.py` (pagina de propiedades, indice `_PAGE_*` + rama en `sync`),
   `tab.py` (boton) y sus tests. Las del bitmap (pixelado, foco) ademas tocan `raster.py` y el pipeline de
   `tab.refresh` / `svg.build_svg`.
+- **Atajos de Anotar (Ctrl+V/C/Z/Y/S/0/1/+/-)**: son `Qt.WindowShortcut`, NO `WidgetWithChildrenShortcut`. Con el segundo, al cambiar de
+  pestana con el mouse el foco se queda en la `QTabBar` (fuera de la pestana) y Ctrl+V no hacia nada (bug reportado el 2026-10-22).
+  Qt solo activa un atajo de ventana mientras su widget esta visible, asi que no choca con la pestana Portada; los cuadros de texto
+  aceptan Copiar/Pegar/Deshacer por su cuenta (`ShortcutOverride`). Prueba: `tests/test_annotate_shortcuts.py`.
+  `QTest.keyClick(w, ...)` manda la tecla a `w`, no al widget con foco: para probar un cuadro de texto apunta al cuadro.
 - Git en Windows avisa "LF will be replaced by CRLF": es solo un aviso.
 
 ## 5. Pendiente aparte (no mezclar con lo anterior)
