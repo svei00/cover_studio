@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 import shutil
 import time
@@ -9,7 +10,7 @@ import unicodedata
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QFontMetricsF
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QFontMetricsF, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -145,6 +146,7 @@ class MainWindow(QMainWindow):
         self.photo_path: Path | None = None
         self.output_manually_edited = False
         self.last_output_path: Path | None = None
+        self._generated_signature: tuple | None = None   # el contenido y diseno de la ultima portada generada
         self._syncing_subtitle_position = False
 
         self._preview_timer = QTimer(self)
@@ -250,6 +252,15 @@ class MainWindow(QMainWindow):
 
     def _build_preset_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
+        self.new_cover_btn = QPushButton("Nueva portada")
+        self.new_cover_btn.setShortcut(QKeySequence("Ctrl+N"))
+        self.new_cover_btn.setToolTip(
+            "Empieza otra portada (Ctrl+N): borra el titulo, el subtitulo, la foto y la ruta de salida.\n"
+            "El diseno actual se conserva; para volver a los valores de marca usa Restablecer todo."
+        )
+        self.new_cover_btn.clicked.connect(self._on_new_cover_clicked)
+        layout.addWidget(self.new_cover_btn)
+        layout.addSpacing(12)
         layout.addWidget(QLabel("Preset:"))
 
         self.preset_combo = QComboBox()
@@ -1055,6 +1066,50 @@ class MainWindow(QMainWindow):
             self.preset_combo.setCurrentIndex(index)
         self.statusBar().showMessage(f"Preset guardado en {path}")
 
+    def _cover_signature(self) -> tuple:
+        """Lo que define la portada de hoy: texto, foto y diseno (una copia, porque el config se muta al vuelo)."""
+        return (
+            self.title_edit.toPlainText().strip(), self.subtitle_edit.text().strip(), self.photo_path,
+            copy.deepcopy(self.config),
+        )
+
+    def _has_unsaved_cover(self) -> bool:
+        """Hay una portada a medias: tiene contenido y no coincide con la ultima que se genero."""
+        has_content = bool(self.title_edit.toPlainText().strip() or self.subtitle_edit.text().strip() or self.photo_path)
+        return has_content and self._cover_signature() != self._generated_signature
+
+    def _confirm_discard_cover(self) -> bool:
+        answer = QMessageBox.question(
+            self, "Nueva portada",
+            "La portada actual no se ha generado con estos cambios.\n\nSi empiezas otra se pierde el texto y la foto. "
+            "Quieres continuar?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
+
+    def _on_new_cover_clicked(self) -> None:
+        if self._has_unsaved_cover() and not self._confirm_discard_cover():
+            return
+        self.new_cover()
+
+    def new_cover(self) -> None:
+        """Empieza otra portada sin cerrar la aplicacion: limpia el contenido (titulo, subtitulo, foto, ruta de salida y
+        lo que se mostraba de la anterior) y conserva el diseno."""
+        self.title_edit.clear()
+        self.subtitle_edit.clear()
+        self.photo_path = None
+        self.photo_edit.clear()
+        self.output_manually_edited = False   # si no, la ruta nueva no se rellenaria sola
+        self.output_edit.clear()
+        self.last_output_path = None
+        self.open_folder_btn.setEnabled(False)
+        self.fit_warning_label.setVisible(False)
+        self._preview_timer.stop()            # borrar el texto reprogramo la vista previa
+        self.preview_widget.clear_preview()
+        self._generated_signature = self._cover_signature()
+        self.title_edit.setFocus()
+        self.statusBar().showMessage("Portada nueva: escribe el titulo y elige una foto.")
+
     def _on_reset_all_clicked(self) -> None:
         self.output_manually_edited = False
         self._apply_config_to_widgets(default_cover_config())
@@ -1331,6 +1386,7 @@ class MainWindow(QMainWindow):
             output_path.with_suffix(".svg").write_text(svg_text, encoding="utf-8")
 
         self.last_output_path = output_path
+        self._generated_signature = self._cover_signature()
         self.open_folder_btn.setEnabled(True)
         self.statusBar().showMessage(f"Guardado en {output_path} · {elapsed:.2f}s")
         self._trigger_preview_render()

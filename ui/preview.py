@@ -94,6 +94,20 @@ class PreviewWidget(QLabel):
         self._drag_grab_offset = (0.0, 0.0)
         self._render_in_flight = False
         self._pending_request: dict | None = None
+        self._discard_in_flight = False   # clear_preview con un render en curso: su resultado ya no sirve
+
+    def clear_preview(self) -> None:
+        """Vuelve al estado de recien abierto: sin imagen, sin banda ni subtitulo que arrastrar, y sin renders
+        pendientes. Si ya hay uno corriendo, su resultado se descarta cuando termine (si no, repondria la portada vieja)."""
+        self._pending_request = None
+        self._discard_in_flight = self._render_in_flight
+        self._source_pixmap = None
+        self._band_rect = self._subtitle_rect = None
+        self._dragging = False
+        self._drag_target = None
+        self.setPixmap(QPixmap())
+        self.setText("Genera una portada para verla aqui.")
+        self.setCursor(Qt.ArrowCursor)
 
     # ------------------------------------------------------------------
     # Render en segundo plano
@@ -130,6 +144,10 @@ class PreviewWidget(QLabel):
 
     def _on_render_finished(self, png_bytes: bytes, band: BandGeometry, subtitle: BandGeometry | None = None) -> None:
         self._render_in_flight = False
+        if self._discard_in_flight:
+            self._discard_in_flight = False
+            self._advance_queue()
+            return
         pixmap = QPixmap()
         pixmap.loadFromData(png_bytes, "PNG")
         self._band_rect = band
@@ -140,6 +158,10 @@ class PreviewWidget(QLabel):
 
     def _on_render_failed(self, message: str) -> None:
         self._render_in_flight = False
+        if self._discard_in_flight:
+            self._discard_in_flight = False
+            self._advance_queue()
+            return
         self.renderFailed.emit(message)
         self._advance_queue()
 
