@@ -14,6 +14,11 @@ el ultimo commit es `01951c6` (Escalar + colores de marca); antes `458a13e` (lap
 - **Pestana "Portada"**: genera portadas 16:9 (foto + banda + titulo + acento en L), vista previa en
   vivo con hilo y debounce, arrastre de la banda y del subtitulo, presets, guarda anti-sobrescritura.
   Subtitulo con degradado de relleno y de borde (dos colores), contorno de letras y posicion en pixeles.
+  **Boton "Nueva portada"** (Ctrl+N, barra de arriba): `MainWindow.new_cover()` limpia titulo, subtitulo, foto, ruta de
+  salida (y `output_manually_edited`, que si no frenaba el autorrelleno), `last_output_path`, el aviso de que no cabe y la
+  vista previa (`PreviewWidget.clear_preview()` descarta tambien el render en curso). CONSERVA el diseno. Pregunta antes de
+  descartar solo si hay contenido distinto de lo ultimo generado (`_cover_signature`). Tests: `tests/test_main_window_new_cover.py`.
+  Nota de pruebas: `QTest.qWait` retiene el GIL y hace que el hilo de la vista previa tarde segundos; con `app.exec()` real tarda 0,5 s.
 - **Pestana "Anotar"**: anota capturas con la identidad de Excel Solutions. Herramientas: Seleccionar,
   Marcador (con flecha), Recuadro, Resaltar, Flecha, Linea (puntas y estilos opcionales), **Lapiz** y
   **Resaltador libre** (mano alzada, suavizado), Paso, Texto, Pixelar, **Foco**, Lupa (rectangular por
