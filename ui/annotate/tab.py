@@ -231,7 +231,11 @@ class AnnotateTab(QWidget):
                           (QKeySequence.StandardKey.ZoomIn, lambda: self.canvas.zoom_at(ZOOM_BUTTON_STEP)),
                           (QKeySequence.StandardKey.ZoomOut, lambda: self.canvas.zoom_at(1 / ZOOM_BUTTON_STEP))):
             shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            # de la ventana, no solo de lo que esta dentro de la pestana: al cambiar de pestana con el mouse el foco se queda en
+            # la barra de pestanas (fuera de este widget) y con WidgetWithChildren Ctrl+V / Ctrl+C no hacian nada. Qt solo
+            # activa el atajo mientras la pestana esta visible, asi que no choca con los de la pestana Portada, y los
+            # cuadros de texto (que aceptan Copiar, Pegar y Deshacer por su cuenta) siguen mandando en lo suyo.
+            shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(slot)
 
     def _on_zoom_changed(self, scale: float) -> None:
