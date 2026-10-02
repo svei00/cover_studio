@@ -685,3 +685,27 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Dibujo: el codo es UN solo trazo `PPath` (puntos, inglete, rayas opcionales; Qt + SVG + cotas en `bounds.py`), por eso la
   esquina no tiene muesca y el resplandor translucido no se aclara donde se juntan los tramos. `connector_segments` devuelve
   sus pares consecutivos (clic y cotas siguen funcionando). Las asas quedan en los extremos del camino.
+
+### Iconos vectoriales (check, cruz, alerta, info, pregunta, estrella, mas, menos)
+
+- `Icon` (model.py): `kind` (`IconKind`), `style` (`IconStyle`: SEAL = sello relleno con simbolo claro, OUTLINE = contenedor claro
+  con borde de color, SYMBOL = solo el simbolo con halo blanco), `color` (None = de fabrica, `style.ICON_COLORS`: check verde
+  #21B868, cruz roja #D32F2F, alerta ambar, info azul, pregunta violeta, estrella dorada, mas verde, menos rojo), `glyph_color`
+  (None = automatico), `size` (radio a escala 1, 8-120), `ring` (borde blanco fino), y el resplandor (`glow*`, mismos campos
+  que el Paso).
+- Geometria pura en `core/annotate/icons.py` (coordenadas unitarias; sin Qt): `glyph(kind)` (trazos + puntos),
+  `container_polygon(kind)` (triangulo de la alerta, estrella; None = circulo). Todo cabe en el CUADRADO unitario, que es la caja
+  de seleccion. `primitives.icon_primitives` arma las capas: resplandor, borde blanco, contenedor, simbolo. Usa solo primitivas
+  que ya existian (PCircle, PPolygon, PPolyline de remate redondo), asi que Qt y resvg lo dibujan igual (hay prueba de paridad de
+  pixeles de las 24 combinaciones). Un circulo no tiene opacidad de relleno: los discos translucidos del resplandor del
+  simbolo se pintan como trazo grueso (`_soft_disc`). El resplandor del triangulo y la estrella es el contorno engrosado en
+  capas (si se escalara el poligono saldria desparejo).
+- Sin contenedor (SYMBOL) el simbolo se agranda x1.4 (`ICON_SYMBOL_BOOST`); la estrella siempre lleva contenedor (no tiene otro simbolo).
+- Herramientas: `Tool.CHECK`, `Tool.CROSS` (botones propios con miniatura) y `Tool.ICON` (boton con menu para los otros seis; el
+  elegido es `controller.icon_kind`, arranca en Alerta). Las tres se repiten tras colocar (STICKY). Los iconos nuevos heredan el
+  ULTIMO estilo elegido en el panel (`controller.icon_style`, `set_icon_defaults`, senal `iconDefaultsChanged`).
+- Panel: pagina `_PAGE_ICON` (icono con miniatura, estilo, color, simbolo, tamano, borde blanco, resplandor con intensidad y
+  grosor). Las miniaturas salen de `ui/annotate/icon_pixmap.py`, que pinta con las MISMAS primitivas.
+- Pendiente: asa de tamano en el lienzo (hoy el tamano es solo del panel, como el Paso); la fase B (emojis de Windows como
+  stickers: Qt rasteriza el glifo con Segoe UI Emoji y se incrusta como imagen; Texto con emojis hoy se ve en color al exportar
+  pero en monocromo en pantalla y su caja no mide su ancho).

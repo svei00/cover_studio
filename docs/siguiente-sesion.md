@@ -78,6 +78,12 @@ Verificado a ojo sobre fondo claro y oscuro.
 Ver `docs/arquitectura-anotar.md` ("Conector de la lupa"). Tests: `tests/test_annotate_lens_connector_edit.py`.
 El CODO en angulo recto tambien esta hecho (`connector_route`, `PPath`; `tests/test_annotate_lens_connector_elbow.py`).
 
+### 3.1c Iconos vectoriales (check, cruz, alerta, info, pregunta, estrella, mas, menos): HECHO (fase A)
+Ver `docs/arquitectura-anotar.md` ("Iconos vectoriales"). Botones Check / Cruz / Icono(menu). Tests: `test_annotate_icons.py`,
+`test_annotate_icons_ui.py`. **Fase B pendiente (Svei la quiere despues):** emojis de Windows como stickers (boton que abre
+Win+. o selector propio; Qt rasteriza el glifo a color con Segoe UI Emoji; se incrusta como imagen; el proyecto guarda el
+caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (hoy Texto los pinta monocromos en pantalla).
+
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
 - Que un Paso nuevo herede el estilo del ultimo Paso; asas de tamano en el lienzo para el Paso.
