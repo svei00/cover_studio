@@ -11,6 +11,7 @@ from core.annotate.palette import BRAND_PALETTE, Palette
 from core.annotate.style import (
     CARD_FILL,
     CREAM,
+    ICON_RADIUS,
     DEFAULT_GLOW_SIZE,
     DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
@@ -75,6 +76,23 @@ class LensShape(str, Enum):
     CIRCLE = "circle"      # circulo (el origen se toma cuadrado)
     ELLIPSE = "ellipse"    # ovalo con las proporciones del rectangulo arrastrado
     ROUNDED = "rounded"    # rectangular; las esquinas se ajustan con `corner`
+
+
+class IconKind(str, Enum):
+    CHECK = "check"
+    CROSS = "cross"
+    WARNING = "warning"
+    INFO = "info"
+    QUESTION = "question"
+    STAR = "star"
+    PLUS = "plus"
+    MINUS = "minus"
+
+
+class IconStyle(str, Enum):
+    SEAL = "seal"        # sello: contenedor relleno con el simbolo claro
+    OUTLINE = "outline"  # contorno: contenedor blanco con borde y simbolo de color
+    SYMBOL = "symbol"    # solo el simbolo, con un halo blanco para que se lea
 
 
 class ConnectorRoute(str, Enum):
@@ -170,6 +188,27 @@ class StepBadge:
     size: float = STEP_RADIUS                 # radio (mitad del lado), a escala 1
     number_size: float | None = None          # None = automatico (proporcional a `size`)
     border_width: float = STEP_STROKE
+    glow: bool = False
+    glow_color: str | None = None
+    glow_strength: float = DEFAULT_GLOW_STRENGTH
+    glow_size: float = DEFAULT_GLOW_SIZE
+
+
+@dataclass(frozen=True)
+class Icon:
+    """Icono vectorial (check, cruz, alerta, info, pregunta, estrella, mas, menos). `color` None = el de fabrica del
+    icono (verde para el check, rojo para la cruz...); `glyph_color` None = automatico (claro sobre el sello, del color
+    del icono en los otros estilos). `size` es el radio a escala 1. `ring` = borde blanco fino para que se vea sobre
+    cualquier captura."""
+
+    id: str
+    center: tuple[float, float]
+    kind: IconKind = IconKind.CHECK
+    style: IconStyle = IconStyle.SEAL
+    color: str | None = None
+    glyph_color: str | None = None
+    size: float = ICON_RADIUS
+    ring: bool = True
     glow: bool = False
     glow_color: str | None = None
     glow_strength: float = DEFAULT_GLOW_STRENGTH
@@ -294,7 +333,7 @@ class Stroke:
     glow_size: float = DEFAULT_GLOW_SIZE
 
 
-Annotation = Marker | Arrow | StepBadge | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight
+Annotation = Marker | Arrow | StepBadge | Icon | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight
 
 
 @dataclass

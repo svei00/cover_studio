@@ -31,7 +31,10 @@ from core.annotate.style import (
     MAX_PEN_WIDTH,
     MAX_STEP_SIZE,
     MAX_STEP_STROKE,
+    ICON_RADIUS,
     MARKER_STROKE,
+    MAX_ICON_SIZE,
+    MIN_ICON_SIZE,
     MIN_GLOW_SIZE,
     MIN_GLOW_STRENGTH,
     MIN_LENS_FRAME_WIDTH,
@@ -54,6 +57,9 @@ from core.annotate.model import (
     Highlight,
     HeadStyle,
     HighlightMode,
+    Icon,
+    IconKind,
+    IconStyle,
     LensShape,
     LineStyle,
     Magnifier,
@@ -209,6 +215,11 @@ def item_to_dict(item: Annotation) -> dict:
                 "number_color": item.number_color, "size": item.size, "number_size": item.number_size,
                 "border_width": item.border_width, "glow": item.glow, "glow_color": item.glow_color,
                 "glow_strength": item.glow_strength, "glow_size": item.glow_size}
+    if isinstance(item, Icon):
+        return {"type": "icon", "id": item.id, "center": list(item.center), "kind": item.kind.value,
+                "style": item.style.value, "color": item.color, "glyph_color": item.glyph_color, "size": item.size,
+                "ring": item.ring, "glow": item.glow, "glow_color": item.glow_color,
+                "glow_strength": item.glow_strength, "glow_size": item.glow_size}
     if isinstance(item, TextLabel):
         return {"type": "text", "id": item.id, "pos": list(item.pos), "text": item.text,
                 "size": item.size, "color": item.color, "bold": item.bold, "bg": item.bg,
@@ -274,6 +285,15 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_none(data.get("number_size"), MIN_NUMBER_SIZE, MAX_NUMBER_SIZE),
                 _number_or_default(data.get("border_width"), MIN_STEP_STROKE, MAX_STEP_STROKE, STEP_STROKE),
                 data.get("glow") is True, _color_or_none(data.get("glow_color")),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
+            )
+        if kind == "icon":
+            return Icon(
+                data["id"], tuple(data["center"]), _enum_or_default(IconKind, data.get("kind"), IconKind.CHECK),
+                _enum_or_default(IconStyle, data.get("style"), IconStyle.SEAL),
+                _color_or_none(data.get("color")), _color_or_none(data.get("glyph_color")),
+                _number_or_default(data.get("size"), MIN_ICON_SIZE, MAX_ICON_SIZE, ICON_RADIUS),
+                data.get("ring") is not False, data.get("glow") is True, _color_or_none(data.get("glow_color")),
                 _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
             )
         if kind == "text":

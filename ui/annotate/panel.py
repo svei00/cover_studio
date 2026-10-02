@@ -36,6 +36,9 @@ from core.annotate.model import (
     HeadStyle,
     Highlight,
     HighlightMode,
+    Icon,
+    IconKind,
+    IconStyle,
     LensShape,
     LineStyle,
     Magnifier,
@@ -53,6 +56,11 @@ from core.annotate.palette import PALETTE_LABELS
 from core.brand import brand_palette
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
+    ICON_COLORS,
+    ICON_LIGHT,
+    ICON_RADIUS,
+    MAX_ICON_SIZE,
+    MIN_ICON_SIZE,
     DEFAULT_GLOW_SIZE,
     DEFAULT_GLOW_STRENGTH,
     MAX_GLOW_SIZE,
@@ -98,6 +106,7 @@ from core.annotate.style import (
     TEXT_PRESETS,
 )
 from ui.annotate.controller import DEFAULT_REDACTION_BLOCK, EditController, Tool
+from ui.annotate.icon_pixmap import ICON_LABELS, icon_for
 from ui.widgets import ColorPickerButton, ColorSwatchRow
 
 ARROW_LABELS = {
@@ -116,6 +125,7 @@ LINE_STYLE_LABELS = {
     LineStyle.DASH_DOT: "Raya y punto",
 }
 CONNECTOR_ROUTE_LABELS = {ConnectorRoute.STRAIGHT: "Recto", ConnectorRoute.ELBOW: "Con codo"}
+ICON_STYLE_LABELS = {IconStyle.SEAL: "Sello", IconStyle.OUTLINE: "Contorno", IconStyle.SYMBOL: "Solo simbolo"}
 HEAD_LABELS = {HeadStyle.NONE: "Sin punta", HeadStyle.ARROW: "Flecha", HeadStyle.DOT: "Punto"}
 STEP_SHAPE_LABELS = {
     StepShape.CIRCLE: "Circulo",
@@ -147,7 +157,7 @@ PRESET_LABELS = {
 }
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
- _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS) = range(11)
+ _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON) = range(12)
 
 
 RESET_TIP = "Doble clic para restablecer el valor por defecto"
@@ -237,6 +247,7 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_highlight_page())
         self._pages.addWidget(self._build_stroke_page())
         self._pages.addWidget(self._build_focus_page())
+        self._pages.addWidget(self._build_icon_page())
 
         # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
         self._scroll = QScrollArea()
@@ -739,6 +750,56 @@ class PropertiesPanel(QWidget):
         *self._step_glow_spins, self._step_glow_rows = self._glow_rows(form)
         return page
 
+    def _build_icon_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self._icon_kind = QComboBox()
+        for kind, label in ICON_LABELS.items():
+            self._icon_kind.addItem(icon_for(kind), label, kind.value)
+        self._icon_kind.currentIndexChanged.connect(self._on_icon_kind_changed)
+        form.addRow("Icono", self._icon_kind)
+        self._icon_style = QComboBox()
+        for icon_style, label in ICON_STYLE_LABELS.items():
+            self._icon_style.addItem(label, icon_style.value)
+        self._icon_style.currentIndexChanged.connect(self._on_icon_style_changed)
+        self._field_row(form, "Estilo", self._icon_style, "style", IconStyle.SEAL)
+        self._icon_color = self._color_row(form, "Color", "color")
+        self._icon_glyph_color = self._color_row(form, "Simbolo", "glyph_color")
+        self._icon_size = QDoubleSpinBox()
+        self._icon_size.setRange(MIN_ICON_SIZE, MAX_ICON_SIZE)
+        self._icon_size.setDecimals(1)
+        self._icon_size.setSingleStep(1.0)
+        self._icon_size.setSuffix(" px")
+        self._icon_size.setToolTip("Radio del icono (la mitad de su ancho)")
+        self._icon_size.valueChanged.connect(lambda v: self._apply(size=float(v)))
+        self._field_row(form, "Tamano", self._icon_size, "size", ICON_RADIUS)
+        self._icon_ring = QCheckBox("Borde blanco")
+        self._icon_ring.setToolTip("Un borde blanco fino para que se vea sobre cualquier captura, clara u oscura")
+        self._icon_ring.toggled.connect(lambda on: self._apply(ring=on))
+        form.addRow(self._icon_ring)
+        self._icon_glow = QCheckBox("Resplandor")
+        self._icon_glow.toggled.connect(lambda on: self._apply(glow=on))
+        form.addRow(self._icon_glow)
+        self._icon_form = form
+        self._icon_glow_color = self._color_row(form, "Color del resplandor", "glow_color")
+        *self._icon_glow_spins, self._icon_glow_rows = self._glow_rows(form)
+        return page
+
+    def _on_icon_kind_changed(self) -> None:
+        if self._syncing:
+            return
+        kind = IconKind(self._icon_kind.currentData())
+        self._c.edit_selected(_merge=False, kind=kind)
+        if kind not in (IconKind.CHECK, IconKind.CROSS):   # esos dos tienen su propio boton
+            self._c.set_icon_defaults(kind=kind)
+
+    def _on_icon_style_changed(self) -> None:
+        if self._syncing:
+            return
+        icon_style = IconStyle(self._icon_style.currentData())
+        self._c.edit_selected(_merge=False, style=icon_style)
+        self._c.set_icon_defaults(style=icon_style)   # los siguientes se colocan con este estilo
+
     def _build_text_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
@@ -1032,6 +1093,23 @@ class PropertiesPanel(QWidget):
                 self._step_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._step_form.setRowVisible(self._step_glow_color, item.glow)
                 self._sync_glow_rows(self._step_form, self._step_glow_spins, self._step_glow_rows, item, item.glow)
+            elif isinstance(item, Icon):
+                self._pages.setCurrentIndex(_PAGE_ICON)
+                self._title.setText("Icono")
+                self._set_combo(self._icon_kind, item.kind.value)
+                self._set_combo(self._icon_style, item.style.value)
+                base = item.color or ICON_COLORS[item.kind.value]
+                self._icon_color.set_value(base, item.color is not None)
+                light_glyph = item.style is IconStyle.SEAL and item.kind is not IconKind.STAR
+                self._icon_glyph_color.set_value(item.glyph_color or (ICON_LIGHT if light_glyph else base),
+                                                 item.glyph_color is not None)
+                self._icon_form.setRowVisible(self._icon_glyph_color, item.kind is not IconKind.STAR)   # la estrella no lleva simbolo
+                self._set_spin(self._icon_size, item.size)
+                self._icon_ring.setChecked(item.ring)
+                self._icon_glow.setChecked(item.glow)
+                self._icon_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._icon_form.setRowVisible(self._icon_glow_color, item.glow)
+                self._sync_glow_rows(self._icon_form, self._icon_glow_spins, self._icon_glow_rows, item, item.glow)
             elif isinstance(item, TextLabel):
                 self._pages.setCurrentIndex(_PAGE_TEXT)
                 self._title.setText("Etiqueta de texto")

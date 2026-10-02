@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QStandardPaths, Qt, Signal
-from PySide6.QtGui import QGuiApplication, QImage, QKeySequence, QShortcut
+from PySide6.QtCore import QSize, QStandardPaths, Qt, Signal
+from PySide6.QtGui import QAction, QGuiApplication, QImage, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -32,7 +32,7 @@ from core.annotate.bounds import required_padding
 from core.brand import brand_palette
 from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
-from core.annotate.model import AnnotationDoc, Magnifier, Redaction
+from core.annotate.model import AnnotationDoc, IconKind, Magnifier, Redaction
 from core.annotate.primitives import build_primitives
 from core.annotate.raster import active_spotlight, apply_redactions, apply_spotlight, lens_crops, load_image
 from core.annotate.upscale import FACTORS, save_upscaled, scaled_output_path
@@ -40,6 +40,7 @@ from core.annotate.svg import default_output_path, export_png, export_svg, rende
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
 from ui.annotate.controller import STICKY_TOOLS, EditController, Tool
+from ui.annotate.icon_pixmap import ICON_LABELS, icon_for
 from ui.annotate.panel import PropertiesPanel
 from ui.dialogs import OverwriteConfirmDialog
 from ui.flow_layout import FlowLayout, spacer
@@ -67,6 +68,9 @@ TOOL_BUTTONS = (
     (Tool.PEN, "Lapiz", "Dibuja a mano alzada: mantén el boton y arrastra. El trazo se suaviza solo al soltar"),
     (Tool.PEN_MARKER, "Resaltador libre", "Resalta a mano alzada con un trazo ancho que deja ver (y leer) lo de abajo"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),
+    (Tool.CHECK, "Check", "Icono de check (verde por defecto): clic donde va; el color y el estilo se cambian en el panel"),
+    (Tool.CROSS, "Cruz", "Icono de cruz (rojo por defecto): clic donde va; el color y el estilo se cambian en el panel"),
+    (Tool.ICON, "Icono", "Otros iconos (alerta, info, pregunta, estrella, mas, menos): elige uno en la flecha y haz clic donde va"),
     (Tool.TEXT, "Texto", "Etiqueta de texto: clic donde va y escribe en el panel"),
     (Tool.REDACT, "Pixelar", "Pixela una zona para anonimizar (RFC, nombres, UUID)"),
     (Tool.FOCUS, "Foco", "Oscurece o desenfoca todo menos una zona (solo un foco por captura). El desenfoque NO oculta datos: usa Pixelar"),
@@ -157,6 +161,8 @@ class AnnotateTab(QWidget):
             self.tool_buttons[tool] = button
             tools.addWidget(button)
         self.tool_buttons[Tool.SELECT].setChecked(True)
+        self._build_icon_buttons()
+        self.controller.iconDefaultsChanged.connect(self._refresh_icon_button)
         tools.addWidget(spacer(16))
         self.undo_btn = QToolButton()
         self.undo_btn.setText("Deshacer")
@@ -234,6 +240,38 @@ class AnnotateTab(QWidget):
 
     def _on_clean_changed(self, clean: bool) -> None:
         self.dirtyChanged.emit(not clean)
+
+    def _build_icon_buttons(self) -> None:
+        """Check y Cruz con su miniatura; Icono con un menu para elegir cual de los otros se coloca."""
+        for tool, kind in ((Tool.CHECK, IconKind.CHECK), (Tool.CROSS, IconKind.CROSS)):
+            self._decorate_icon_button(self.tool_buttons[tool], kind)
+        button = self.tool_buttons[Tool.ICON]
+        self._decorate_icon_button(button, self.controller.icon_kind)
+        button.setPopupMode(QToolButton.MenuButtonPopup)
+        menu = QMenu(button)
+        self.icon_actions: dict[IconKind, QAction] = {}
+        for kind, label in ICON_LABELS.items():
+            if kind in (IconKind.CHECK, IconKind.CROSS):
+                continue   # estos dos ya tienen su boton
+            action = menu.addAction(icon_for(kind), label)
+            action.triggered.connect(lambda _checked=False, k=kind: self._choose_icon(k))
+            self.icon_actions[kind] = action
+        button.setMenu(menu)
+
+    @staticmethod
+    def _decorate_icon_button(button: QToolButton, kind: IconKind) -> None:
+        button.setIcon(icon_for(kind, px=16))
+        button.setIconSize(QSize(14, 14))
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+    def _refresh_icon_button(self) -> None:
+        self._decorate_icon_button(self.tool_buttons[Tool.ICON], self.controller.icon_kind)
+
+    def _choose_icon(self, kind: IconKind) -> None:
+        """Elegir uno en el menu de Icono: ese es el que se coloca y la herramienta queda activa."""
+        self.controller.set_icon_defaults(kind=kind)
+        self.controller.set_tool(Tool.ICON)
+        self.tool_buttons[Tool.ICON].setChecked(True)
 
     def _on_tool_changed(self, tool: Tool) -> None:
         self.tool_buttons[tool].setChecked(True)

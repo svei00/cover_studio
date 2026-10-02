@@ -32,6 +32,9 @@ from core.annotate.model import (
     Redaction,
     Spotlight,
     StepBadge,
+    Icon,
+    IconKind,
+    IconStyle,
     Stroke,
     text_label_from_preset,
 )
@@ -61,6 +64,9 @@ class Tool(str, Enum):
     PEN = "pen"
     PEN_MARKER = "pen-marker"
     STEP = "step"
+    CHECK = "check"   # iconos: el check y la cruz tienen su propio boton; ICON coloca el que se eligio en su menu
+    CROSS = "cross"
+    ICON = "icon"
     TEXT = "text"
     REDACT = "redact"
     FOCUS = "focus"
@@ -72,7 +78,7 @@ class Tool(str, Enum):
 # Esc o eligiendo otra. El texto no: abre su editor y lo normal es una sola etiqueta.
 STICKY_TOOLS = frozenset({
     Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.PEN, Tool.PEN_MARKER, Tool.STEP,
-    Tool.REDACT, Tool.LENS,
+    Tool.CHECK, Tool.CROSS, Tool.ICON, Tool.REDACT, Tool.LENS,
 })
 MAX_LIVE_POINTS = 20000   # puntos del mouse que se guardan mientras se dibuja un trazo (el resto se ignora)
 
@@ -184,6 +190,7 @@ class EditController(QObject):
     selectionChanged = Signal()
     toolChanged = Signal(object)
     textEditRequested = Signal()
+    iconDefaultsChanged = Signal()   # cambio el icono o el estilo con que se colocan los nuevos
     cropDraftChanged = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -199,6 +206,8 @@ class EditController(QObject):
         self._grab: Point = (0.0, 0.0)
         self._anchor: Point = (0.0, 0.0)
         self.crop_draft: Rect | None = None   # recorte en curso (solo durante el gesto)
+        self.icon_kind = IconKind.WARNING       # el icono que coloca la herramienta Icono (Check y Cruz tienen la suya)
+        self.icon_style = IconStyle.SEAL        # el estilo con que se colocan los iconos nuevos (el ultimo que se eligio)
         self._press_arrows: dict[str, tuple[Point, Point]] = {}   # flechas de los marcadores al empezar el gesto
         self._stroke_raw: list[Point] = []   # puntos crudos del mouse del trazo a mano alzada en curso
 
@@ -239,6 +248,14 @@ class EditController(QObject):
 
     def selected_item(self) -> Annotation | None:
         return self.item_by_id(self.selected_id)
+
+    def set_icon_defaults(self, kind: IconKind | None = None, style: IconStyle | None = None) -> None:
+        """Icono (herramienta Icono) y estilo (todos) con que se colocan los iconos nuevos."""
+        if (kind is None or kind is self.icon_kind) and (style is None or style is self.icon_style):
+            return
+        self.icon_kind = kind or self.icon_kind
+        self.icon_style = style or self.icon_style
+        self.iconDefaultsChanged.emit()
 
     def set_tool(self, tool: Tool) -> None:
         if tool is self.tool:
@@ -362,6 +379,9 @@ class EditController(QObject):
         elif self.tool is Tool.STEP:
             item = StepBadge(edit.new_id(self.doc.items), p, edit.next_step_number(self.doc.items))
             self._commit_new(item)
+        elif self.tool in (Tool.CHECK, Tool.CROSS, Tool.ICON):
+            kind = {Tool.CHECK: IconKind.CHECK, Tool.CROSS: IconKind.CROSS}.get(self.tool, self.icon_kind)
+            self._commit_new(Icon(edit.new_id(self.doc.items), p, kind, self.icon_style))
         elif self.tool is Tool.TEXT:
             item = text_label_from_preset(edit.new_id(self.doc.items), p, "Texto", "nota")
             self._commit_new(item)

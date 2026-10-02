@@ -104,6 +104,20 @@ MAX_STEP_STROKE = 12.0
 MIN_NUMBER_SIZE = 6.0
 MAX_NUMBER_SIZE = 120.0
 
+# Iconos (check, cruz, alerta...): vectoriales propios, se dibujan igual en pantalla y en el PNG/SVG
+ICON_RADIUS = 20.0          # radio a escala 1
+MIN_ICON_SIZE = 8.0
+MAX_ICON_SIZE = 120.0
+ICON_RING = 0.12            # borde blanco que los separa de la captura, como fraccion del radio
+ICON_STROKE = 0.17          # grosor del simbolo (fraccion del radio)
+ICON_OUTLINE = 0.11         # grosor del contorno en el estilo Contorno
+ICON_SYMBOL_BOOST = 1.4     # sin contenedor el simbolo se agranda (si no, se ve diminuto)
+ICON_LIGHT = "#FFFFFF"
+ICON_COLORS: dict[str, str] = {   # color de fabrica de cada icono (clave = IconKind.value)
+    "check": "#21B868", "cross": "#D32F2F", "warning": "#F2A900", "info": "#2F80D6",
+    "question": "#7B61C9", "star": "#E8B95C", "plus": "#21B868", "minus": "#D32F2F",
+}
+
 TEXT_LINE_HEIGHT = 1.25
 
 # Presets de etiqueta de texto. Las claves son campos de TextLabel.

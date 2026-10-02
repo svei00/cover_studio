@@ -16,6 +16,7 @@ from core.annotate.model import (
     Annotation,
     Arrow,
     Highlight,
+    Icon,
     Magnifier,
     Marker,
     Rect,
@@ -132,6 +133,8 @@ def hit_item(
         if item.shape is StepShape.DIAMOND:
             return dx + dy <= reach
         return dx <= reach and dy <= reach
+    if isinstance(item, Icon):
+        return math.hypot(p[0] - item.center[0], p[1] - item.center[1]) <= item.size * scale + tol / 2
     if isinstance(item, TextLabel):
         return _contains(label_box(item, scale).inflate(tol / 2), p)
     if isinstance(item, Magnifier):
@@ -235,6 +238,9 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
     if isinstance(item, StepBadge):
         r = step_extent(item, scale)
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
+    if isinstance(item, Icon):
+        r = item.size * scale
+        return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
     if isinstance(item, Magnifier):
         return lens.lens_rect(item)
     return label_box(item, scale)
@@ -312,7 +318,7 @@ def move_item(
             start=(item.start[0] + dx, item.start[1] + dy),
             end=(item.end[0] + dx, item.end[1] + dy),
         )
-    if isinstance(item, StepBadge):
+    if isinstance(item, (StepBadge, Icon)):
         return replace(item, center=(item.center[0] + dx, item.center[1] + dy))
     if isinstance(item, TextLabel):
         return replace(item, pos=(item.pos[0] + dx, item.pos[1] + dy))

@@ -9,7 +9,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from core.annotate import freehand, lens, style
+from core.annotate import freehand, icons, lens, style
 from core.annotate.palette import BRAND_PALETTE, Palette
 from core.annotate.model import (
     Annotation,
@@ -19,6 +19,8 @@ from core.annotate.model import (
     Highlight,
     HeadStyle,
     HighlightMode,
+    Icon,
+    IconStyle,
     LensShape,
     LineStyle,
     Magnifier,
@@ -393,6 +395,76 @@ def step_primitives(s: StepBadge, scale: float, palette: Palette = BRAND_PALETTE
     return out
 
 
+def _soft_disc(center: Point, radius: float, color: str, opacity: float) -> PCircle:
+    """Disco translucido: un circulo no tiene opacidad de relleno, asi que se pinta como un trazo grueso (radio r/2, ancho r)."""
+    return PCircle(center, radius / 2, None, color, radius, opacity=opacity)
+
+
+def icon_primitives(i: Icon, scale: float) -> list[Primitive]:
+    """Resplandor, borde blanco, contenedor y simbolo de un icono. Todo sale de `icons` (coordenadas unitarias): el
+    contenedor es un circulo salvo en la alerta (triangulo) y la estrella, que son su propio contenedor. En el estilo
+    Solo simbolo no hay contenedor (la estrella lo conserva: no tiene otro simbolo)."""
+    r = i.size * scale
+    cx, cy = i.center
+    color = i.color or style.ICON_COLORS[i.kind.value]
+    light = style.ICON_LIGHT
+    ring = style.ICON_RING * r if i.ring else 0.0
+    glyph = icons.glyph(i.kind)
+    polygon = icons.container_polygon(i.kind)
+    boxed = i.style is not IconStyle.SYMBOL or not icons.has_glyph(i.kind)
+    filled = i.style is not IconStyle.OUTLINE                     # contenedor de color (sello); el contorno va claro
+    glyph_color = i.glyph_color or (light if filled and boxed and icons.has_glyph(i.kind) else color)
+    boost = 1.0 if boxed else style.ICON_SYMBOL_BOOST
+    sw = style.ICON_STROKE * r * (1.0 if boxed else 1.2)
+    outline = style.ICON_OUTLINE * r
+    corner = (0.16 if filled else style.ICON_OUTLINE) * r          # grosor del trazo que redondea las esquinas del poligono
+
+    def pts(unit: Sequence[Point], k: float = 1.0) -> tuple[Point, ...]:
+        return tuple((cx + x * r * k, cy + y * r * k) for x, y in unit)
+
+    out: list[Primitive] = []
+    if i.glow:
+        glow_color = i.glow_color or style.GLOW_GOLD
+        if boxed and polygon is None:   # anillos concentricos alrededor del circulo, como los del paso
+            width = style.glow_ring_width(i.glow_size) * scale
+            for off, op in style.glow_rings(i.glow_strength, i.glow_size):
+                out.append(PCircle((cx, cy), r + off * scale, None, glow_color, width, opacity=op))
+        elif boxed:   # triangulo y estrella: el contorno engrosado en capas (un desplazamiento parejo, sin picos)
+            for off, op in reversed(style.glow_rings(i.glow_strength, i.glow_size)):
+                out.append(PPolygon(pts(polygon), None, glow_color, corner + 2 * (ring + off * scale),
+                                    op * style.CONNECTOR_GLOW_STRENGTH))
+        else:       # solo simbolo: halo en capas pegado al trazo, como el del lapiz (de la mas ancha y tenue a la angosta)
+            for off, op in reversed(style.glow_rings(i.glow_strength, i.glow_size)):
+                o = off * scale
+                for stroke in glyph.strokes:
+                    out.append(PPolyline(pts(stroke, boost), glow_color, sw + 2 * (ring + o), op * style.CONNECTOR_GLOW_STRENGTH))
+                for center, radius in glyph.dots:
+                    out.append(_soft_disc(pts([center], boost)[0], radius * r * boost + ring + o, glow_color,
+                                          op * style.CONNECTOR_GLOW_STRENGTH))
+    if boxed:
+        if polygon is None:
+            if ring:
+                out.append(PCircle((cx, cy), r + ring, light, None))
+            if filled:
+                out.append(PCircle((cx, cy), r, color, None))
+            else:   # contorno: relleno claro con borde de color, por dentro del radio
+                out.append(PCircle((cx, cy), r - outline / 2, light, color, outline))
+        else:
+            if ring:
+                out.append(PPolygon(pts(polygon), light, light, corner + 2 * ring))
+            out.append(PPolygon(pts(polygon), color if filled else light, color, corner))
+    elif ring:   # solo simbolo: un halo blanco por debajo para que se lea sobre cualquier captura
+        for stroke in glyph.strokes:
+            out.append(PPolyline(pts(stroke, boost), light, sw + 2 * ring))
+        for center, radius in glyph.dots:
+            out.append(PCircle(pts([center], boost)[0], radius * r * boost + ring, light, None))
+    for stroke in glyph.strokes:
+        out.append(PPolyline(pts(stroke, boost), glyph_color, sw))
+    for center, radius in glyph.dots:
+        out.append(PCircle(pts([center], boost)[0], radius * r * boost, glyph_color, None))
+    return out
+
+
 def stroke_curve(s: Stroke) -> tuple[Point, ...]:
     """La polilinea que se dibuja de un trazo (curva por sus puntos de control). Un trazo de un solo punto
     es un punto: se dibuja como un segmento diminuto para que el remate redondo lo pinte."""
@@ -532,6 +604,9 @@ def item_bounds(item: Annotation, scale: float) -> Rect | None:
     if isinstance(item, StepBadge):
         r = step_extent(item, scale)
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
+    if isinstance(item, Icon):
+        r = item.size * scale
+        return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
     if isinstance(item, TextLabel):
         return label_box(item, scale)
     if isinstance(item, Magnifier):
@@ -585,6 +660,8 @@ def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[
         return arrow_primitives(item, scale, doc.palette)
     if isinstance(item, StepBadge):
         return step_primitives(item, scale, doc.palette)
+    if isinstance(item, Icon):
+        return icon_primitives(item, scale)
     if isinstance(item, TextLabel):
         return text_label_primitives(item, scale)
     if isinstance(item, Magnifier):
