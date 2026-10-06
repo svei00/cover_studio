@@ -226,6 +226,7 @@ class AnnotateTab(QWidget):
                           (QKeySequence.StandardKey.Redo, self.controller.redo),
                           (QKeySequence.StandardKey.Save, self.save_project),
                           (QKeySequence.StandardKey.Copy, self.copy_to_clipboard),
+                          (QKeySequence.StandardKey.SelectAll, self.controller.select_all),
                           (QKeySequence("Ctrl+0"), self.canvas.fit),
                           (QKeySequence("Ctrl+1"), self.canvas.actual_size),
                           (QKeySequence.StandardKey.ZoomIn, lambda: self.canvas.zoom_at(ZOOM_BUTTON_STEP)),
@@ -284,7 +285,7 @@ class AnnotateTab(QWidget):
         stack = self.controller.stack
         self.undo_btn.setEnabled(stack.canUndo())
         self.redo_btn.setEnabled(stack.canRedo())
-        self.delete_btn.setEnabled(self.controller.selected_item() is not None)
+        self.delete_btn.setEnabled(bool(self.controller.selected_ids))
 
     # ------------------------------------------------------------------
     # Cargar

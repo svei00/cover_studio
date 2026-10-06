@@ -63,6 +63,7 @@ class AnnotateCanvas(QWidget):
         controller.selectionChanged.connect(self.update)
         controller.toolChanged.connect(self._on_tool_changed)
         controller.cropDraftChanged.connect(self.update)
+        controller.marqueeChanged.connect(self.update)
 
     def set_content(
         self,
@@ -276,6 +277,7 @@ class AnnotateCanvas(QWidget):
         if self._editing_crop():
             self._paint_crop_overlay(painter)
         self._paint_selection(painter)
+        self._paint_marquee(painter)
 
     def _paint_crop_overlay(self, painter: QPainter) -> None:
         """Con la herramienta Recortar: oscurece lo que quedaria fuera y dibuja las asas."""
@@ -308,6 +310,10 @@ class AnnotateCanvas(QWidget):
         forman parte de la imagen exportada)."""
         if self._controller is None:
             return
+        items = self._controller.selected_items()
+        if len(items) >= 2:
+            self._paint_multi_selection(painter, items)
+            return
         item = self._controller.selected_item()
         if item is None:
             return
@@ -333,6 +339,31 @@ class AnnotateCanvas(QWidget):
             else:
                 painter.drawRect(box)
 
+    def _paint_multi_selection(self, painter: QPainter, items: Sequence) -> None:
+        """Varias seleccionadas: la caja punteada de cada una y, alrededor de todas, la caja del conjunto (a la que se
+        alinean). Sin asas: lo que se puede hacer con varias es moverlas, alinearlas y borrarlas."""
+        assert self._controller is not None
+        scale = self._controller.scale()
+        boxes = [box for item in items for box in edit.selection_rects(item, scale)]
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(SELECTION_COLOR), 1.5, Qt.DashLine))
+        for box in boxes:
+            painter.drawRect(QRectF(self.image_to_view((box.x, box.y)), self.image_to_view((box.right, box.bottom))).adjusted(-3, -3, 3, 3))
+        left, top = min(b.x for b in boxes), min(b.y for b in boxes)
+        right, bottom = max(b.right for b in boxes), max(b.bottom for b in boxes)
+        painter.setPen(QPen(QColor(SELECTION_COLOR), 1.0))
+        painter.drawRect(QRectF(self.image_to_view((left, top)), self.image_to_view((right, bottom))).adjusted(-7, -7, 7, 7))
+
+    def _paint_marquee(self, painter: QPainter) -> None:
+        """El rectangulo que se arrastra sobre un hueco para seleccionar lo que toca."""
+        if self._controller is None or self._controller.marquee is None:
+            return
+        box = self._controller.marquee
+        rect = QRectF(self.image_to_view((box.x, box.y)), self.image_to_view((box.right, box.bottom)))
+        painter.setPen(QPen(QColor(SELECTION_COLOR), 1.0))
+        painter.setBrush(QColor(77, 163, 255, 40))
+        painter.drawRect(rect)
+
     # ------------------------------------------------------------------
     # Mouse y teclado
     # ------------------------------------------------------------------
@@ -349,7 +380,8 @@ class AnnotateCanvas(QWidget):
         if event.button() != Qt.LeftButton or self._controller is None or not self.has_image():
             return
         self.setFocus()
-        self._controller.press(self.view_to_image(event.position()), self._tolerance())
+        additive = bool(event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier))   # suma o quita de la seleccion
+        self._controller.press(self.view_to_image(event.position()), self._tolerance(), additive)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
         if self._pan_last is not None:

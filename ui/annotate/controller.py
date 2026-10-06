@@ -9,12 +9,14 @@ empujarlos sobre un estado ya aplicado no duplica nada."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from enum import Enum
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
+from core.annotate import align as aligning
 from core.annotate import crop as cropping
 from core.annotate import freehand
 from core.annotate import edit, lens
@@ -45,6 +47,7 @@ from core.annotate.style import PEN_MARKER_WIDTH
 Point = tuple[float, float]
 
 MIN_RECT = 6.0
+MIN_MARQUEE = 4.0   # lado minimo (px de la imagen) para que el rectangulo de seleccion cuente como arrastre
 MIN_ARROW = 8.0
 MIN_LENS_SOURCE = 12.0
 PROPERTY_MERGE_ID = 1000
@@ -155,6 +158,35 @@ class _ReplaceCommand(QUndoCommand):
         return True
 
 
+class _MultiReplaceCommand(QUndoCommand):
+    """Cambia varias anotaciones a la vez (mover un grupo, alinear, distribuir): UN paso de deshacer. Aplica estados, no
+    deltas. Con `merge_id` (las flechas del teclado) los pasos seguidos sobre las mismas anotaciones se fusionan."""
+
+    def __init__(
+        self, controller: EditController, olds: list[Annotation], news: list[Annotation], text: str, merge_id: int = -1
+    ) -> None:
+        super().__init__(text)
+        self._controller = controller
+        self._olds = olds
+        self._news = news
+        self._merge_id = merge_id
+
+    def id(self) -> int:  # noqa: A003 (override de Qt)
+        return self._merge_id
+
+    def redo(self) -> None:
+        self._controller._set_items(self._news)
+
+    def undo(self) -> None:
+        self._controller._set_items(self._olds)
+
+    def mergeWith(self, other: QUndoCommand) -> bool:  # noqa: N802 (override de Qt)
+        if not isinstance(other, _MultiReplaceCommand) or [i.id for i in other._news] != [i.id for i in self._news]:
+            return False
+        self._news = other._news
+        return True
+
+
 class _DocPropertyCommand(QUndoCommand):
     """Cambia una propiedad del documento (margen, escala de trazo). Los cambios
     seguidos de la misma propiedad se fusionan en un solo paso."""
@@ -191,6 +223,7 @@ class EditController(QObject):
     toolChanged = Signal(object)
     textEditRequested = Signal()
     iconDefaultsChanged = Signal()   # cambio el icono o el estilo con que se colocan los nuevos
+    marqueeChanged = Signal()        # el rectangulo de seleccion (arrastrar sobre un hueco) aparecio, cambio o se quito
     cropDraftChanged = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -198,7 +231,10 @@ class EditController(QObject):
         self.doc: AnnotationDoc | None = None
         self.stack = QUndoStack(self)
         self.tool = Tool.SELECT
-        self.selected_id: str | None = None
+        self._selected: list[str] = []         # ids de lo seleccionado, en orden; el ultimo es el "principal"
+        self.marquee: Rect | None = None       # rectangulo de seleccion en curso (solo durante el gesto)
+        self._marquee_base: list[str] = []     # lo ya seleccionado cuando el rectangulo SUMA (Ctrl / Shift)
+        self._group_orig: dict[str, Annotation] = {}   # estado inicial de cada anotacion al mover un grupo
         self._mode: str | None = None
         self._orig: Annotation | None = None
         self._handle: edit.Handle | None = None
@@ -222,7 +258,8 @@ class EditController(QObject):
         self._set_crop_draft(None)
         self.tool = Tool.SELECT
         self.toolChanged.emit(self.tool)
-        self.selected_id = None
+        self._selected = []
+        self._set_marquee(None)
         self.selectionChanged.emit()
         self.changed.emit()
 
@@ -246,8 +283,21 @@ class EditController(QObject):
         index = edit.find_index(self.doc.items, item_id)
         return None if index is None else self.doc.items[index]
 
+    @property
+    def selected_id(self) -> str | None:
+        """La anotacion seleccionada o, si hay varias, la ultima que se sumo."""
+        return self._selected[-1] if self._selected else None
+
+    @property
+    def selected_ids(self) -> tuple[str, ...]:
+        return tuple(self._selected)
+
     def selected_item(self) -> Annotation | None:
-        return self.item_by_id(self.selected_id)
+        """La anotacion seleccionada, SOLO si hay exactamente una (con varias, editar propiedades no tiene sentido)."""
+        return self.item_by_id(self._selected[0]) if len(self._selected) == 1 else None
+
+    def selected_items(self) -> list[Annotation]:
+        return [item for i in self._selected if (item := self.item_by_id(i)) is not None]
 
     def set_icon_defaults(self, kind: IconKind | None = None, style: IconStyle | None = None) -> None:
         """Icono (herramienta Icono) y estilo (todos) con que se colocan los iconos nuevos."""
@@ -269,9 +319,46 @@ class EditController(QObject):
         self.toolChanged.emit(tool)
 
     def select(self, item_id: str | None) -> None:
-        if item_id != self.selected_id:
-            self.selected_id = item_id
+        self.select_many([] if item_id is None else [item_id])
+
+    def select_many(self, ids: Sequence[str]) -> None:
+        ids = list(dict.fromkeys(ids))   # sin repetidos, en orden
+        if ids != self._selected:
+            self._selected = ids
             self.selectionChanged.emit()
+
+    def toggle_selected(self, item_id: str) -> None:
+        """Ctrl / Shift + clic: suma la anotacion a la seleccion o la quita si ya estaba."""
+        if item_id in self._selected:
+            self.select_many([i for i in self._selected if i != item_id])
+        else:
+            self.select_many(self._selected + [item_id])
+
+    def select_all(self) -> None:
+        if self.doc is not None:
+            self.set_tool(Tool.SELECT)
+            self.select_many([item.id for item in self.doc.items])
+
+    def _set_marquee(self, rect: Rect | None) -> None:
+        if rect != self.marquee:
+            self.marquee = rect
+            self.marqueeChanged.emit()
+
+    def items_in_rect(self, rect: Rect) -> list[str]:
+        """Ids de las anotaciones que toca el rectangulo (el foco, que abarca toda la captura, solo si lo contiene)."""
+        if self.doc is None:
+            return []
+        scale = self.scale()
+        out = []
+        for item in self.doc.items:
+            boxes = edit.selection_rects(item, scale)
+            if isinstance(item, Spotlight):
+                hit = all(rect.x <= b.x and rect.y <= b.y and b.right <= rect.right and b.bottom <= rect.bottom for b in boxes)
+            else:
+                hit = any(rect.intersects(b) for b in boxes)
+            if hit:
+                out.append(item.id)
+        return out
 
     # ------------------------------------------------------------------
     # Mutaciones internas (sin deshacer; las usan los comandos y los gestos)
@@ -293,8 +380,8 @@ class EditController(QObject):
         if index is None:
             return
         del self.doc.items[index]
-        if self.selected_id == item_id:
-            self.selected_id = None
+        if item_id in self._selected:
+            self._selected = [i for i in self._selected if i != item_id]
             self.selectionChanged.emit()
         self.changed.emit()
 
@@ -305,6 +392,16 @@ class EditController(QObject):
         if index is None:
             return
         self.doc.items[index] = item
+        self.changed.emit()
+
+    def _set_items(self, items: Sequence[Annotation]) -> None:
+        """Reemplaza varias anotaciones y avisa UNA vez (mover o alinear un grupo no repinta N veces)."""
+        if self.doc is None:
+            return
+        for item in items:
+            index = edit.find_index(self.doc.items, item.id)
+            if index is not None:
+                self.doc.items[index] = item
         self.changed.emit()
 
     def _set_doc_property(self, attr: str, value: object) -> None:
@@ -363,14 +460,15 @@ class EditController(QObject):
     # Gestos del mouse (coordenadas en pixeles de imagen)
     # ------------------------------------------------------------------
 
-    def press(self, point: Point, tol: float) -> None:
+    def press(self, point: Point, tol: float, additive: bool = False) -> None:
+        """`additive` (Ctrl o Shift) suma o quita de la seleccion en vez de reemplazarla."""
         if self.doc is None:
             return
         p = edit.clamp_point(point, self.doc.image_size)
         if self.tool is Tool.CROP:
             self._press_crop(p, tol)
         elif self.tool is Tool.SELECT:
-            self._press_select(p, tol)
+            self._press_select(p, tol, additive)
         elif self.tool in (
             Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.LENS,
             Tool.PEN, Tool.PEN_MARKER, Tool.FOCUS,
@@ -398,16 +496,29 @@ class EditController(QObject):
         else:
             self._mode, self._anchor = "crop_create", p
 
-    def _press_select(self, p: Point, tol: float) -> None:
+    def _press_select(self, p: Point, tol: float, additive: bool = False) -> None:
         assert self.doc is not None
         selected = self.selected_item()
         arrows = self._press_arrows = self.marker_arrows()   # se congelan: durante el gesto no se recalculan
-        if selected is not None:
+        if selected is not None and not additive:
             handle = edit.hit_handle(selected, p, tol, arrows)
             if handle is not None:
                 self._mode, self._orig, self._handle = "resize", selected, handle
                 return
         hit = edit.hit_test(self.doc.items, p, tol, self.scale(), arrows)
+        if additive and hit is not None:
+            self.toggle_selected(hit)   # sumar o quitar: sin arrastre
+            return
+        if hit is None:   # un hueco: arrastrar dibuja el rectangulo de seleccion; un clic sin arrastrar deselecciona
+            self._mode, self._anchor = "marquee", p
+            self._marquee_base = list(self._selected) if additive else []
+            if not additive:
+                self.select(None)
+            return
+        if hit in self._selected and len(self._selected) > 1:   # arrastrar una de varias seleccionadas las mueve a todas
+            self._mode, self._orig, self._grab, self._part = "move_group", None, p, None
+            self._group_orig = {item.id: item for item in self.selected_items()}
+            return
         self.select(hit)
         if hit is not None:
             self._mode, self._orig, self._grab = "move", self.item_by_id(hit), p
@@ -482,6 +593,16 @@ class EditController(QObject):
         if self._mode == "crop_resize" and self._handle is not None and self.crop_draft is not None:
             self._set_crop_draft(cropping.resize_crop(self.crop_draft, self._handle, p))
             return
+        if self._mode == "marquee":
+            rect = edit.rect_from_points(self._anchor, p)
+            self._set_marquee(rect)
+            if rect.w >= MIN_MARQUEE or rect.h >= MIN_MARQUEE:   # un temblor del mouse no cuenta como arrastre
+                self.select_many(self._marquee_base + self.items_in_rect(rect))
+            return
+        if self._mode == "move_group":
+            dx, dy = p[0] - self._grab[0], p[1] - self._grab[1]
+            self._set_items([edit.move_item(orig, dx, dy) for orig in self._group_orig.values()])
+            return
         if self._orig is None:
             return
         if self._mode == "move":
@@ -512,6 +633,16 @@ class EditController(QObject):
             # un arrastre minusculo no crea (ni quita) el recorte; las asas ya respetan el minimo
             if draft is not None and draft.w >= cropping.MIN_CROP and draft.h >= cropping.MIN_CROP:
                 self.set_crop(draft)
+            return
+        if mode == "marquee":
+            self._set_marquee(None)
+            return
+        if mode == "move_group":
+            olds = list(self._group_orig.values())
+            news = [item for o in olds if (item := self.item_by_id(o.id)) is not None]
+            self._group_orig = {}
+            if len(news) == len(olds) and news != olds:
+                self.stack.push(_MultiReplaceCommand(self, olds, news, "Mover"))
             return
         if mode is None or orig is None:
             return
@@ -597,6 +728,13 @@ class EditController(QObject):
         if self._mode in ("crop_create", "crop_resize"):
             self._mode = None
             self._set_crop_draft(None)
+        elif self._mode == "marquee":
+            self._mode = None
+            self._set_marquee(None)
+        elif self._mode == "move_group":
+            self._mode = None
+            self._set_items(list(self._group_orig.values()))   # el gesto se cancela: todo vuelve a donde estaba
+            self._group_orig = {}
         elif self._mode is not None and self._orig is not None:
             mode, orig = self._mode, self._orig
             self._mode = None
@@ -610,21 +748,71 @@ class EditController(QObject):
         else:
             self.select(None)
 
-    def delete_selected(self) -> None:
-        selected = self.selected_item()
-        if selected is None or self.doc is None:
+    def can_align(self) -> bool:
+        return len(self._selected) >= 2
+
+    def can_distribute(self) -> bool:
+        return len(self._selected) >= aligning.MIN_TO_DISTRIBUTE
+
+    def _apply_deltas(self, items: list[Annotation], deltas: dict[str, aligning.Delta], text: str) -> None:
+        """Mueve cada anotacion lo que dice `deltas` en UN paso. De la lupa solo se mueve el LENTE: su origen es la zona
+        que se amplia y no debe cambiar de sitio."""
+        olds, news = [], []
+        for item in items:
+            delta = deltas.get(item.id)
+            if delta is None:
+                continue
+            part = "lens" if isinstance(item, Magnifier) else None
+            moved = edit.move_item(item, delta[0], delta[1], part)
+            if moved != item:
+                olds.append(item)
+                news.append(moved)
+        if news:
+            self.stack.push(_MultiReplaceCommand(self, olds, news, text))
+
+    def _selected_boxes(self) -> tuple[list[Annotation], dict[str, Rect]]:
+        scale = self.scale()
+        items = self.selected_items()
+        return items, {item.id: edit.selection_rect(item, scale) for item in items}
+
+    def align_selected(self, mode: aligning.Align) -> None:
+        """Alinea las seleccionadas contra la caja que las envuelve a todas (2 o mas)."""
+        if not self.can_align():
             return
-        index = edit.find_index(self.doc.items, selected.id)
-        if index is not None:
-            self.stack.push(_RemoveCommand(self, selected, index))
+        items, boxes = self._selected_boxes()
+        self._apply_deltas(items, aligning.align_deltas(boxes, mode), "Alinear")
+
+    def distribute_selected(self, axis: aligning.Distribute) -> None:
+        """Deja el mismo hueco entre las seleccionadas (3 o mas); las de los extremos no se mueven."""
+        if not self.can_distribute():
+            return
+        items, boxes = self._selected_boxes()
+        self._apply_deltas(items, aligning.distribute_deltas(boxes, axis), "Distribuir")
+
+    def delete_selected(self) -> None:
+        if self.doc is None:
+            return
+        found = [(edit.find_index(self.doc.items, item.id), item) for item in self.selected_items()]
+        found = sorted(((i, item) for i, item in found if i is not None), key=lambda pair: -pair[0])
+        if len(found) == 1:
+            self.stack.push(_RemoveCommand(self, found[0][1], found[0][0]))
+        elif found:   # de la ultima a la primera: al deshacer cada una vuelve a su lugar
+            self.stack.beginMacro("Borrar")
+            for index, item in found:
+                self.stack.push(_RemoveCommand(self, item, index))
+            self.stack.endMacro()
 
     def nudge(self, dx: float, dy: float) -> None:
-        selected = self.selected_item()
-        if selected is None:
+        items = self.selected_items()
+        if not items:
             return
-        moved = edit.move_item(selected, dx, dy)
-        if moved != selected:
-            self.stack.push(_ReplaceCommand(self, selected, moved, "Mover", NUDGE_MERGE_ID))
+        moved = [edit.move_item(item, dx, dy) for item in items]
+        if moved == items:
+            return
+        if len(items) == 1:
+            self.stack.push(_ReplaceCommand(self, items[0], moved[0], "Mover", NUDGE_MERGE_ID))
+        else:
+            self.stack.push(_MultiReplaceCommand(self, items, moved, "Mover", NUDGE_MERGE_ID))
 
     def edit_selected(self, *, _merge: bool = True, **changes) -> None:
         """Cambia propiedades (campos de la anotacion) de la seleccionada. Los

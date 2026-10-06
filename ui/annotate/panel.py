@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -106,6 +106,8 @@ from core.annotate.style import (
     TEXT_PRESETS,
 )
 from ui.annotate.controller import DEFAULT_REDACTION_BLOCK, EditController, Tool
+from core.annotate.align import Align, Distribute
+from ui.annotate.align_icons import align_icon, distribute_icon
 from ui.annotate.icon_pixmap import ICON_LABELS, icon_for
 from ui.widgets import ColorPickerButton, ColorSwatchRow
 
@@ -125,6 +127,18 @@ LINE_STYLE_LABELS = {
     LineStyle.DASH_DOT: "Raya y punto",
 }
 CONNECTOR_ROUTE_LABELS = {ConnectorRoute.STRAIGHT: "Recto", ConnectorRoute.ELBOW: "Con codo"}
+ALIGN_TIPS = {
+    Align.LEFT: "Alinear a la izquierda",
+    Align.CENTER_H: "Centrar horizontalmente (centros en una misma vertical)",
+    Align.RIGHT: "Alinear a la derecha",
+    Align.TOP: "Alinear arriba",
+    Align.MIDDLE_V: "Centrar verticalmente (centros en una misma horizontal)",
+    Align.BOTTOM: "Alinear abajo",
+}
+DISTRIBUTE_TIPS = {
+    Distribute.HORIZONTAL: "Distribuir horizontalmente: el mismo hueco entre columnas",
+    Distribute.VERTICAL: "Distribuir verticalmente: el mismo hueco entre filas",
+}
 ICON_STYLE_LABELS = {IconStyle.SEAL: "Sello", IconStyle.OUTLINE: "Contorno", IconStyle.SYMBOL: "Solo simbolo"}
 HEAD_LABELS = {HeadStyle.NONE: "Sin punta", HeadStyle.ARROW: "Flecha", HeadStyle.DOT: "Punto"}
 STEP_SHAPE_LABELS = {
@@ -157,7 +171,7 @@ PRESET_LABELS = {
 }
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
- _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON) = range(12)
+ _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON, _PAGE_MULTI) = range(13)
 
 
 RESET_TIP = "Doble clic para restablecer el valor por defecto"
@@ -248,6 +262,7 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_stroke_page())
         self._pages.addWidget(self._build_focus_page())
         self._pages.addWidget(self._build_icon_page())
+        self._pages.addWidget(self._build_multi_page())
 
         # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
         self._scroll = QScrollArea()
@@ -750,6 +765,59 @@ class PropertiesPanel(QWidget):
         *self._step_glow_spins, self._step_glow_rows = self._glow_rows(form)
         return page
 
+    def _build_multi_page(self) -> QWidget:
+        """Varias anotaciones seleccionadas: lo que se puede hacer con el conjunto (alinear y distribuir)."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._multi_count = QLabel()
+        font = self._multi_count.font()
+        font.setBold(True)
+        self._multi_count.setFont(font)
+        hint = QLabel(
+            "Arrastra una para mover todas juntas. Ctrl o Shift + clic suma o quita; arrastrar sobre un hueco dibuja "
+            "un rectangulo que selecciona lo que toca; Ctrl + A las selecciona todas; Suprimir las borra."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(self._multi_count)
+
+        self._align_buttons: dict[Align, QToolButton] = {}
+        align_box = QGroupBox("Alinear")
+        align_row = QHBoxLayout(align_box)
+        for mode, tip in ALIGN_TIPS.items():
+            button = self._tool_button(align_icon(mode), tip)
+            button.clicked.connect(lambda _checked=False, m=mode: self._c.align_selected(m))
+            align_row.addWidget(button)
+            self._align_buttons[mode] = button
+        align_row.addStretch(1)
+        align_note = QLabel("Contra la caja que envuelve a todas las seleccionadas.")
+        align_note.setWordWrap(True)
+        layout.addWidget(align_box)
+        layout.addWidget(align_note)
+
+        self._distribute_buttons: dict[Distribute, QToolButton] = {}
+        distribute_box = QGroupBox("Distribuir (3 o mas)")
+        distribute_row = QHBoxLayout(distribute_box)
+        for axis, tip in DISTRIBUTE_TIPS.items():
+            button = self._tool_button(distribute_icon(axis), tip)
+            button.clicked.connect(lambda _checked=False, a=axis: self._c.distribute_selected(a))
+            distribute_row.addWidget(button)
+            self._distribute_buttons[axis] = button
+        distribute_row.addStretch(1)
+        layout.addWidget(distribute_box)
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        return page
+
+    @staticmethod
+    def _tool_button(icon, tip: str) -> QToolButton:
+        button = QToolButton()
+        button.setIcon(icon)
+        button.setIconSize(QSize(20, 20))
+        button.setToolTip(tip)
+        button.setAutoRaise(False)
+        return button
+
     def _build_icon_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
@@ -1046,6 +1114,14 @@ class PropertiesPanel(QWidget):
             if self._c.tool is Tool.CROP and self._c.doc is not None:
                 self._pages.setCurrentIndex(_PAGE_CROP)
                 self._title.setText("Recortar")
+            elif len(self._c.selected_ids) >= 2:
+                self._pages.setCurrentIndex(_PAGE_MULTI)
+                self._title.setText("Seleccion multiple")
+                self._multi_count.setText(f"{len(self._c.selected_ids)} anotaciones seleccionadas")
+                for button in self._align_buttons.values():
+                    button.setEnabled(self._c.can_align())
+                for button in self._distribute_buttons.values():
+                    button.setEnabled(self._c.can_distribute())
             elif isinstance(item, Marker):
                 self._pages.setCurrentIndex(_PAGE_MARKER)
                 self._title.setText("Marcador")
