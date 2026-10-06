@@ -1,7 +1,8 @@
 """Alinear y distribuir (como Photoshop o Figma): dadas las cajas de varias anotaciones, cuanto hay que mover cada una.
 Geometria pura, sin Qt.
 
-- Alinear: contra la caja que envuelve a TODAS las seleccionadas (no contra la imagen).
+- Alinear: por defecto contra la caja que envuelve a TODAS las seleccionadas; o contra una caja dada (la imagen), y entonces
+  tambien sirve con una sola (centrar un icono, pegarlo al borde).
 - Distribuir (3 o mas): deja el mismo hueco entre cajas vecinas; las dos de los extremos no se mueven."""
 
 from __future__ import annotations
@@ -40,11 +41,13 @@ def bounds(boxes: Mapping[str, Rect]) -> Rect:
     return Rect(x0, y0, x1 - x0, y1 - y0)
 
 
-def align_deltas(boxes: Mapping[str, Rect], mode: Align) -> dict[str, Delta]:
-    """Cuanto mover cada caja para alinearla (solo las que cambian). Con menos de dos no hay nada que alinear."""
-    if len(boxes) < 2:
+def align_deltas(boxes: Mapping[str, Rect], mode: Align, reference: Rect | None = None) -> dict[str, Delta]:
+    """Cuanto mover cada caja para alinearla (solo las que cambian). Sin `reference` se alinean contra la caja que las
+    envuelve a todas y con menos de dos no hay nada que alinear; con `reference` (la imagen) cada una se alinea contra
+    ESA caja por separado, tambien una sola."""
+    if not boxes or (reference is None and len(boxes) < 2):
         return {}
-    whole = bounds(boxes)
+    whole = reference if reference is not None else bounds(boxes)
     out: dict[str, Delta] = {}
     for key, b in boxes.items():
         if mode is Align.LEFT:

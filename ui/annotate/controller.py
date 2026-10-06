@@ -748,8 +748,9 @@ class EditController(QObject):
         else:
             self.select(None)
 
-    def can_align(self) -> bool:
-        return len(self._selected) >= 2
+    def can_align(self, to_image: bool = False) -> bool:
+        """Contra la seleccion hacen falta dos; contra la imagen basta una."""
+        return len(self._selected) >= (1 if to_image else 2)
 
     def can_distribute(self) -> bool:
         return len(self._selected) >= aligning.MIN_TO_DISTRIBUTE
@@ -775,12 +776,18 @@ class EditController(QObject):
         items = self.selected_items()
         return items, {item.id: edit.selection_rect(item, scale) for item in items}
 
-    def align_selected(self, mode: aligning.Align) -> None:
-        """Alinea las seleccionadas contra la caja que las envuelve a todas (2 o mas)."""
-        if not self.can_align():
+    def align_selected(self, mode: aligning.Align, to_image: bool = False) -> None:
+        """Alinea las seleccionadas contra la caja que las envuelve a todas (2 o mas) o, con `to_image`, cada una contra la
+        imagen (la parte que se exporta si hay recorte). Una sola seleccionada se alinea siempre contra la imagen: no
+        hay otra cosa contra que alinearla."""
+        if self.doc is None:
+            return
+        to_image = to_image or len(self._selected) == 1
+        if not self.can_align(to_image):
             return
         items, boxes = self._selected_boxes()
-        self._apply_deltas(items, aligning.align_deltas(boxes, mode), "Alinear")
+        reference = self.doc.view if to_image else None
+        self._apply_deltas(items, aligning.align_deltas(boxes, mode, reference), "Alinear")
 
     def distribute_selected(self, axis: aligning.Distribute) -> None:
         """Deja el mismo hueco entre las seleccionadas (3 o mas); las de los extremos no se mueven."""

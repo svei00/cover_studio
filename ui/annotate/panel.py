@@ -277,8 +277,10 @@ class PropertiesPanel(QWidget):
         holder_layout.addWidget(self._pages)
         holder_layout.addStretch(1)
         self._scroll.setWidget(holder)
+        self._align_strip = self._build_align_strip()
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)
+        layout.addWidget(self._align_strip)
         layout.addWidget(self._scroll, stretch=1)
 
         controller.selectionChanged.connect(self.sync)
@@ -781,20 +783,6 @@ class PropertiesPanel(QWidget):
         hint.setWordWrap(True)
         layout.addWidget(self._multi_count)
 
-        self._align_buttons: dict[Align, QToolButton] = {}
-        align_box = QGroupBox("Alinear")
-        align_row = QHBoxLayout(align_box)
-        for mode, tip in ALIGN_TIPS.items():
-            button = self._tool_button(align_icon(mode), tip)
-            button.clicked.connect(lambda _checked=False, m=mode: self._c.align_selected(m))
-            align_row.addWidget(button)
-            self._align_buttons[mode] = button
-        align_row.addStretch(1)
-        align_note = QLabel("Contra la caja que envuelve a todas las seleccionadas.")
-        align_note.setWordWrap(True)
-        layout.addWidget(align_box)
-        layout.addWidget(align_note)
-
         self._distribute_buttons: dict[Distribute, QToolButton] = {}
         distribute_box = QGroupBox("Distribuir (3 o mas)")
         distribute_row = QHBoxLayout(distribute_box)
@@ -808,6 +796,46 @@ class PropertiesPanel(QWidget):
         layout.addWidget(hint)
         layout.addStretch(1)
         return page
+
+    def _build_align_strip(self) -> QWidget:
+        """Alinear: visible con una o mas anotaciones seleccionadas. Con una (o eligiendo "Imagen") se alinea contra los
+        bordes y el centro de la imagen; con varias, por defecto contra la caja que las envuelve."""
+        strip = QGroupBox("Alinear")
+        column = QVBoxLayout(strip)
+        row = QHBoxLayout()
+        self._align_buttons: dict[Align, QToolButton] = {}
+        for mode, tip in ALIGN_TIPS.items():
+            button = self._tool_button(align_icon(mode), tip)
+            button.clicked.connect(lambda _checked=False, m=mode: self._on_align_clicked(m))
+            row.addWidget(button)
+            self._align_buttons[mode] = button
+        row.addStretch(1)
+        column.addLayout(row)
+        self._align_target = QComboBox()
+        self._align_target.addItem("Respecto a la seleccion", "selection")
+        self._align_target.addItem("Respecto a la imagen", "image")
+        self._align_target.currentIndexChanged.connect(lambda _i: self._sync_align_strip())
+        column.addWidget(self._align_target)
+        self._align_note = QLabel()
+        self._align_note.setWordWrap(True)
+        column.addWidget(self._align_note)
+        return strip
+
+    def _on_align_clicked(self, mode: Align) -> None:
+        self._c.align_selected(mode, to_image=self._align_target.currentData() == "image")
+
+    def _sync_align_strip(self) -> None:
+        count = len(self._c.selected_ids)
+        crop = self._c.tool is Tool.CROP
+        self._align_strip.setVisible(count >= 1 and not crop and self._c.doc is not None)
+        self._align_target.setVisible(count >= 2)
+        to_image = count == 1 or self._align_target.currentData() == "image"
+        for button in self._align_buttons.values():
+            button.setEnabled(self._c.can_align(to_image))
+        self._align_note.setText(
+            "Contra los bordes y el centro de la imagen." if to_image
+            else "Contra la caja que envuelve a todas las seleccionadas."
+        )
 
     @staticmethod
     def _tool_button(icon, tip: str) -> QToolButton:
@@ -1118,8 +1146,6 @@ class PropertiesPanel(QWidget):
                 self._pages.setCurrentIndex(_PAGE_MULTI)
                 self._title.setText("Seleccion multiple")
                 self._multi_count.setText(f"{len(self._c.selected_ids)} anotaciones seleccionadas")
-                for button in self._align_buttons.values():
-                    button.setEnabled(self._c.can_align())
                 for button in self._distribute_buttons.values():
                     button.setEnabled(self._c.can_distribute())
             elif isinstance(item, Marker):
@@ -1277,6 +1303,7 @@ class PropertiesPanel(QWidget):
                 self._title.setText("Propiedades")
             self._sync_document()
             self._refresh_resets()
+            self._sync_align_strip()
             self._fit_page_size()
         finally:
             self._syncing = False

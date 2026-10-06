@@ -166,8 +166,7 @@ def test_si_ya_estan_alineadas_no_se_crea_un_paso_vacio(ctl):
 
 def test_alinear_y_distribuir_piden_dos_y_tres_como_minimo(ctl):
     ctl.select("c1")
-    assert not ctl.can_align() and not ctl.can_distribute()
-    ctl.align_selected(Align.LEFT)
+    assert not ctl.can_align() and ctl.can_align(to_image=True) and not ctl.can_distribute()   # una sola: solo contra la imagen
     ctl.select_many(["c1", "c2"])
     assert ctl.can_align() and not ctl.can_distribute()
     ctl.distribute_selected(Distribute.VERTICAL)
@@ -241,3 +240,117 @@ def test_los_botones_alinean_la_seleccion_y_distribuir_se_activa_con_tres(qapp, 
     p._align_buttons[Align.CENTER_H].click()
     assert len({round(i.center[0], 6) for i in tab.controller.selected_items()}) == 1
     assert tab.controller.stack.count() == 1
+
+
+# --- contra la imagen ------------------------------------------------------------------------------------
+
+def test_con_una_caja_de_referencia_cada_una_se_alinea_contra_ella_tambien_una_sola():
+    imagen = Rect(0.0, 0.0, 200.0, 100.0)
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.LEFT, imagen) == {"a": (-10.0, 0.0)}
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.RIGHT, imagen) == {"a": (170.0, 0.0)}
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.CENTER_H, imagen) == {"a": (80.0, 0.0)}
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.MIDDLE_V, imagen) == {"a": (0.0, 20.0)}
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.BOTTOM, imagen) == {"a": (0.0, 60.0)}
+    assert align_deltas({"a": Rect(10.0, 20.0, 20.0, 20.0)}, Align.LEFT) == {} and align_deltas({}, Align.LEFT, imagen) == {}
+
+
+def test_con_referencia_varias_se_alinean_cada_una_a_la_imagen_no_entre_ellas():
+    imagen = Rect(0.0, 0.0, 200.0, 100.0)
+    deltas = align_deltas({"a": Rect(10.0, 0.0, 20.0, 20.0), "b": Rect(120.0, 0.0, 40.0, 20.0)}, Align.CENTER_H, imagen)
+    assert deltas == {"a": (80.0, 0.0), "b": (-40.0, 0.0)}                  # las dos terminan centradas en x = 100
+
+
+def test_un_icono_se_centra_en_la_imagen_y_se_pega_a_los_bordes_en_un_solo_paso(ctl):
+    ctl.select("c2")                                                     # c2 esta en (104, 160); la imagen es 1000 x 700
+    ctl.align_selected(Align.CENTER_H)
+    assert ctl.item_by_id("c2").center == (500.0, 160.0) and ctl.stack.count() == 1 and ctl.stack.undoText() == "Alinear"
+    ctl.align_selected(Align.MIDDLE_V)
+    assert ctl.item_by_id("c2").center == (500.0, 350.0)
+    ctl.align_selected(Align.LEFT)
+    assert ctl.item_by_id("c2").center[0] == 20.0                        # pegado al borde izquierdo (radio 20)
+    ctl.align_selected(Align.BOTTOM)
+    assert ctl.item_by_id("c2").center[1] == 680.0
+    ctl.undo()
+    ctl.undo()
+    ctl.undo()
+    ctl.undo()
+    assert ctl.item_by_id("c2").center == (104.0, 160.0)
+
+
+def test_con_recorte_se_alinea_contra_la_parte_que_se_exporta(ctl):
+    ctl.set_crop(Rect(200.0, 100.0, 400.0, 300.0))
+    ctl.select("c2")
+    ctl.align_selected(Align.CENTER_H)
+    assert ctl.item_by_id("c2").center[0] == 400.0                       # el centro del recorte, no el de la imagen
+    ctl.align_selected(Align.MIDDLE_V)
+    assert ctl.item_by_id("c2").center[1] == 250.0
+
+
+def test_varias_contra_la_imagen_quedan_centradas_en_ella_cada_una(ctl):
+    ctl.select_many(["c1", "x2"])
+    ctl.align_selected(Align.CENTER_H, to_image=True)
+    assert ctl.item_by_id("c1").center[0] == 500.0 and ctl.item_by_id("x2").center[0] == 500.0
+    assert ctl.item_by_id("c1").center[1] == 100.0                       # la altura no cambia
+    assert ctl.stack.count() == 1
+
+
+def test_una_lupa_sola_se_alinea_moviendo_solo_su_lente(ctl):
+    lupa = Magnifier("m", Rect(500.0, 100.0, 60.0, 40.0), (700.0, 300.0), 2.0)
+    ctl.doc.items.append(lupa)
+    ctl.select("m")
+    ctl.align_selected(Align.CENTER_H)
+    despues = ctl.item_by_id("m")
+    assert despues.source == lupa.source and despues.lens_center[0] == pytest.approx(500.0)
+
+
+def test_la_barra_de_alinear_aparece_con_una_o_mas_y_el_selector_solo_con_varias(qapp, tmp_path):
+    from PIL import Image
+
+    from ui.annotate.controller import Tool
+    from ui.annotate.tab import AnnotateTab
+
+    Image.new("RGB", (800, 600), (255, 255, 255)).save(tmp_path / "cap.png")
+    tab = AnnotateTab()
+    tab.resize(1400, 800)
+    tab.show()
+    QApplication.processEvents()
+    tab.load_capture(tmp_path / "cap.png")
+    tab.doc.items.extend(_columna())
+    tab.doc.items.append(Marker("k", Rect(300.0, 500.0, 100.0, 50.0)))
+    p = tab.panel
+    c = tab.controller
+    assert not p._align_strip.isVisible()                                # sin seleccion no hay nada que alinear
+    for ident in ("c1", "k", "x1"):                                      # una sola, de cualquier tipo
+        c.select(ident)
+        QApplication.processEvents()
+        assert p._align_strip.isVisible() and not p._align_target.isVisible()
+        assert all(b.isEnabled() for b in p._align_buttons.values()) and "imagen" in p._align_note.text()
+    c.select_many(["c1", "c2"])
+    QApplication.processEvents()
+    assert p._align_strip.isVisible() and p._align_target.isVisible() and "envuelve" in p._align_note.text()
+    p._align_target.setCurrentIndex(p._align_target.findData("image"))
+    assert "imagen" in p._align_note.text()
+    p._align_buttons[Align.CENTER_H].click()
+    assert [round(i.center[0], 6) for i in c.selected_items()] == [400.0, 400.0]   # la imagen mide 800 de ancho
+    c.set_tool(Tool.CROP)
+    QApplication.processEvents()
+    assert not p._align_strip.isVisible()
+
+
+def test_los_botones_del_panel_centran_un_icono_en_la_imagen_con_un_clic_cada_uno(qapp, tmp_path):
+    from PIL import Image
+
+    from ui.annotate.tab import AnnotateTab
+
+    Image.new("RGB", (800, 600), (255, 255, 255)).save(tmp_path / "cap.png")
+    tab = AnnotateTab()
+    tab.resize(1400, 800)
+    tab.show()
+    QApplication.processEvents()
+    tab.load_capture(tmp_path / "cap.png")
+    tab.doc.items.append(Icon("i", (50.0, 60.0), IconKind.CHECK))
+    tab.controller.select("i")
+    QApplication.processEvents()
+    tab.panel._align_buttons[Align.CENTER_H].click()
+    tab.panel._align_buttons[Align.MIDDLE_V].click()
+    assert tab.controller.item_by_id("i").center == (400.0, 300.0)
