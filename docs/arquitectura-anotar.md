@@ -729,4 +729,9 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Panel: pagina `_PAGE_MULTI` con el conteo, 6 botones de alinear y 2 de distribuir (iconos dibujados en `ui/annotate/align_icons.py`;
   distribuir se desactiva con menos de tres). El lienzo pinta la caja de cada una y la del conjunto (`_paint_multi_selection`) y el
   rectangulo (`_paint_marquee`).
-- Pendiente: alinear UNA sola anotacion contra la imagen (centrarla); asas de tamano para varias; igualar tamanos.
+- Alinear contra la IMAGEN: `align_deltas(cajas, modo, reference=Rect)` alinea cada caja contra `reference` (por separado, tambien
+  una sola); el controlador usa `doc.view` (la parte que se exporta si hay recorte). `align_selected(modo, to_image=False)`: una sola
+  seleccionada SIEMPRE va contra la imagen; con varias el selector "Respecto a la seleccion / la imagen" decide. La barra
+  "Alinear" (`_align_strip`, `_sync_align_strip`) es COMPARTIDA: vive entre el titulo y las paginas del panel, visible con 1 o mas
+  seleccionadas (menos en Recortar); la pagina multiple solo conserva distribuir.
+- Pendiente: asas de tamano para varias; igualar tamanos.
