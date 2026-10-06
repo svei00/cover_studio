@@ -709,3 +709,24 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Pendiente: asa de tamano en el lienzo (hoy el tamano es solo del panel, como el Paso); la fase B (emojis de Windows como
   stickers: Qt rasteriza el glifo con Segoe UI Emoji y se incrusta como imagen; Texto con emojis hoy se ve en color al exportar
   pero en monocromo en pantalla y su caja no mide su ancho).
+
+### Seleccion multiple, alinear y distribuir
+
+- Controlador: `_selected` (lista de ids; la ultima es la "principal"). `selected_ids`, `selected_items()`, `select_many`,
+  `toggle_selected` (Ctrl o Shift + clic), `select_all` (Ctrl + A). OJO: `selected_item()` devuelve la anotacion SOLO si hay
+  exactamente una (con varias es None), asi que `edit_selected`, las paginas de propiedades y los gestos de redimensionar siguen
+  siendo de una sola; `selected_id` sigue existiendo (solo lectura, la principal).
+- Gestos en la herramienta Seleccionar (`_press_select`, parametro `additive`): Ctrl/Shift + clic suma o quita SIN arrastre; clic en
+  un hueco empieza el RECTANGULO de seleccion (`_mode == "marquee"`, `controller.marquee`, senal `marqueeChanged`; selecciona en vivo lo
+  que toca, `items_in_rect`; el foco solo si lo contiene; con Ctrl/Shift suma a lo ya seleccionado; un clic sin arrastrar deselecciona);
+  arrastrar una de varias seleccionadas las mueve a todas (`_mode == "move_group"`).
+- Deshacer: `_MultiReplaceCommand` (varias anotaciones, UN paso; con `merge_id` las rachas de flechas del teclado se fusionan) para
+  mover un grupo, empujar con el teclado, alinear y distribuir; borrar varias es un macro (`Borrar`) de `_RemoveCommand` de la ultima a
+  la primera para que al deshacer cada una vuelva a su lugar.
+- `core/annotate/align.py` (puro): `align_deltas(cajas, Align)` contra la caja que envuelve a TODAS (como Photoshop) y
+  `distribute_deltas(cajas, Distribute)` (3 o mas: mismo hueco entre vecinas, las de los extremos no se mueven; ordena por posicion).
+  Las cajas son `edit.selection_rect`. De la lupa solo se mueve el LENTE (`part="lens"`); un marcador va con su flecha a mano.
+- Panel: pagina `_PAGE_MULTI` con el conteo, 6 botones de alinear y 2 de distribuir (iconos dibujados en `ui/annotate/align_icons.py`;
+  distribuir se desactiva con menos de tres). El lienzo pinta la caja de cada una y la del conjunto (`_paint_multi_selection`) y el
+  rectangulo (`_paint_marquee`).
+- Pendiente: alinear UNA sola anotacion contra la imagen (centrarla); asas de tamano para varias; igualar tamanos.

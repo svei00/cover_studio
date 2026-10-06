@@ -84,6 +84,10 @@ Ver `docs/arquitectura-anotar.md` ("Iconos vectoriales"). Botones Check / Cruz /
 Win+. o selector propio; Qt rasteriza el glifo a color con Segoe UI Emoji; se incrusta como imagen; el proyecto guarda el
 caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (hoy Texto los pinta monocromos en pantalla).
 
+### 3.1d Seleccion multiple + alinear y distribuir: HECHO
+Ver `docs/arquitectura-anotar.md` ("Seleccion multiple, alinear y distribuir"). Tests: `test_annotate_multiselect.py`,
+`test_annotate_align.py`. **`selected_item()` es None con 2+ seleccionadas**: todo lo que edita propiedades es de una sola.
+
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
 - Que un Paso nuevo herede el estilo del ultimo Paso; asas de tamano en el lienzo para el Paso.
