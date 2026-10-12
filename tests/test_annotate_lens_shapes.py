@@ -273,6 +273,7 @@ def mdrag(canvas, a, b):
 def draw_lens(tab):
     tab.tool_buttons[Tool.LENS].click()
     mdrag(tab.canvas, (100.0, 100.0), (200.0, 160.0))  # rectangulo de 100 x 60: NO cuadrado
+    tab.tool_buttons[Tool.SELECT].click()   # la herramienta sigue activa: se sale para editar
     return tab.doc.items[0]
 
 

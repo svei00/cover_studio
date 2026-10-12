@@ -112,7 +112,7 @@ def test_crear_una_lupa_arrastrando_coloca_el_lente_sin_cubrir_el_origen(ctl):
     assert not lens.lens_rect(item).intersects(lens.effective_source(item))
     box = lens.lens_rect(item)
     assert box.x >= 0 and box.y >= 0 and box.right <= 1000 and box.bottom <= 700
-    assert ctl.selected_id == item.id and ctl.tool is Tool.SELECT
+    assert ctl.selected_id == item.id and ctl.tool is Tool.LENS   # sigue activa
     ctl.undo()
     assert ctl.doc.items == []
 

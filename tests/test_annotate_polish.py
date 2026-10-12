@@ -69,6 +69,7 @@ def mdrag(canvas, a, b):
 def draw_marker(tab, a=(300.0, 200.0), b=(400.0, 250.0)):
     tab.tool_buttons[Tool.MARKER].click()
     mdrag(tab.canvas, a, b)
+    tab.tool_buttons[Tool.SELECT].click()   # la herramienta sigue activa: se sale para editar
 
 
 # --- margen extra ----------------------------------------------------------

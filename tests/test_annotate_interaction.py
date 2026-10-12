@@ -74,7 +74,7 @@ def test_dibujar_un_marcador_con_el_mouse(tab):
     assert isinstance(item, Marker)
     assert (item.rect.x, item.rect.y) == pytest.approx((100, 100), abs=1)
     assert (item.rect.w, item.rect.h) == pytest.approx((200, 80), abs=1)
-    assert tab.tool_buttons[Tool.SELECT].isChecked()
+    assert tab.tool_buttons[Tool.MARKER].isChecked()   # la herramienta sigue activa
     assert tab.undo_btn.isEnabled() and tab.delete_btn.isEnabled()
     assert "1 anotaciones" in tab.info_label.text()
     assert tab.panel._pages.currentIndex() == 1 and tab.panel._title.text() == "Marcador"
@@ -93,6 +93,7 @@ def test_boton_deshacer_y_rehacer(tab):
 def test_mover_con_el_mouse_agarrando_el_borde(tab):
     tab.tool_buttons[Tool.MARKER].click()
     drag(tab.canvas, (100.0, 100.0), (300.0, 180.0))
+    tab.tool_buttons[Tool.SELECT].click()
     x0 = tab.doc.items[0].rect.x
     drag(tab.canvas, (100.0, 140.0), (160.0, 160.0))
     assert tab.doc.items[0].rect.x == pytest.approx(x0 + 60, abs=1)
@@ -101,6 +102,7 @@ def test_mover_con_el_mouse_agarrando_el_borde(tab):
 def test_redimensionar_con_un_asa(tab):
     tab.tool_buttons[Tool.MARKER].click()
     drag(tab.canvas, (100.0, 100.0), (300.0, 180.0))
+    tab.tool_buttons[Tool.SELECT].click()
     r = tab.doc.items[0].rect
     drag(tab.canvas, (r.right, r.bottom), (r.right + 50, r.bottom + 30))
     assert tab.doc.items[0].rect.w == pytest.approx(r.w + 50, abs=1)

@@ -160,6 +160,7 @@ def drag(canvas, a, b):
 def marker(tab):
     tab.tool_buttons[Tool.MARKER].click()
     drag(tab.canvas, (200, 200), (400, 280))
+    tab.tool_buttons[Tool.SELECT].click()   # la herramienta sigue activa: se sale para editar
     QApplication.processEvents()
     return tab.doc.items[0]
 

@@ -35,7 +35,7 @@ from core.annotate.raster import apply_redactions, lens_crops, load_image
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
 from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
-from ui.annotate.controller import EditController, Tool
+from ui.annotate.controller import STICKY_TOOLS, EditController, Tool
 from ui.annotate.panel import PropertiesPanel
 from ui.dialogs import OverwriteConfirmDialog
 
@@ -118,7 +118,7 @@ class AnnotateTab(QWidget):
         for tool, label, tip in TOOL_BUTTONS:
             button = QToolButton()
             button.setText(label)
-            button.setToolTip(tip)
+            button.setToolTip(tip + (" (sigue activa tras dibujar; Esc para salir)" if tool in STICKY_TOOLS else ""))
             button.setCheckable(True)
             button.setEnabled(False)
             button.clicked.connect(lambda _checked, t=tool: self.controller.set_tool(t))

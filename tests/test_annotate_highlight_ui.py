@@ -60,7 +60,7 @@ def test_el_boton_resaltar_existe_y_dibuja_un_resaltador(tab, hl):
     assert isinstance(hl, Highlight)
     assert (hl.rect.x, hl.rect.y) == pytest.approx((100, 100), abs=1)
     assert hl.rect.w == pytest.approx(200, abs=1) and hl.color is None and hl.mode is HighlightMode.MARKER
-    assert tab.controller.selected_id == hl.id and tab.controller.tool is Tool.SELECT
+    assert tab.controller.selected_id == hl.id and tab.controller.tool is Tool.HIGHLIGHT   # sigue activa
     assert tab.panel._title.text() == "Resaltador"
     assert tab.controller.stack.count() == 1
 

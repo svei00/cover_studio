@@ -35,11 +35,11 @@ def drag(c, a, b, tol=TOL):
     c.release(b)
 
 
-def test_crear_marcador_arrastrando_lo_selecciona_y_vuelve_a_seleccionar(ctl):
+def test_crear_marcador_arrastrando_lo_selecciona_y_la_herramienta_sigue_activa(ctl):
     ctl.set_tool(Tool.MARKER)
     drag(ctl, (100.0, 100.0), (200.0, 160.0))
     assert ctl.doc.items == [Marker("a1", Rect(100, 100, 100, 60))]
-    assert ctl.selected_id == "a1" and ctl.tool is Tool.SELECT
+    assert ctl.selected_id == "a1" and ctl.tool is Tool.MARKER   # se queda para dibujar otro
 
 
 def test_crear_arrastrando_hacia_arriba_y_la_izquierda_normaliza_el_rect(ctl):
@@ -86,7 +86,7 @@ def test_pasos_continuan_la_numeracion(ctl):
         ctl.release((x, 50.0))
     assert [i.number for i in ctl.doc.items] == [1, 2, 3]
     assert all(isinstance(i, StepBadge) for i in ctl.doc.items)
-    assert ctl.tool is Tool.SELECT
+    assert ctl.tool is Tool.STEP
 
 
 def test_texto_crea_etiqueta_y_pide_editar_el_texto(ctl):
@@ -282,7 +282,7 @@ def test_el_marcador_sin_flecha_se_crea_con_arrow_none(ctl):
     drag(ctl, (100.0, 100.0), (200.0, 160.0))
     item = ctl.doc.items[0]
     assert isinstance(item, Marker) and item.arrow is ArrowSide.NONE and item.rect == Rect(100, 100, 100, 60)
-    assert ctl.selected_id == item.id and ctl.tool is Tool.SELECT
+    assert ctl.selected_id == item.id and ctl.tool is Tool.MARKER_PLAIN
     ctl.undo()
     assert ctl.doc.items == []
 

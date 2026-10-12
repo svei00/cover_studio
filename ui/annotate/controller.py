@@ -58,6 +58,12 @@ class Tool(str, Enum):
     CROP = "crop"
 
 
+# Herramientas que se QUEDAN activas tras dibujar (dos recuadros seguidos sin volver a elegirla); se sale con
+# Esc o eligiendo otra. El texto no: abre su editor y lo normal es una sola etiqueta.
+STICKY_TOOLS = frozenset({
+    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.STEP, Tool.REDACT, Tool.LENS,
+})
+
 _HANDLE_CURSORS = {
     edit.Handle.NW: Qt.SizeFDiagCursor, edit.Handle.SE: Qt.SizeFDiagCursor,
     edit.Handle.NE: Qt.SizeBDiagCursor, edit.Handle.SW: Qt.SizeBDiagCursor,
@@ -397,7 +403,13 @@ class EditController(QObject):
     def _commit_new(self, item: Annotation) -> None:
         self.stack.push(_AddCommand(self, item))
         self.select(item.id)
-        self.set_tool(Tool.SELECT)
+        self._finish_create()
+
+    def _finish_create(self) -> None:
+        """Tras dibujar: la nueva anotacion queda seleccionada; la herramienta sigue activa si es de las
+        que se repiten, y si no vuelve a Seleccionar."""
+        if self.tool not in STICKY_TOOLS:
+            self.set_tool(Tool.SELECT)
 
     def move(self, point: Point) -> None:
         if self.doc is None or self._mode is None:
@@ -449,7 +461,7 @@ class EditController(QObject):
                 self._remove(orig.id)
             else:
                 self.stack.push(_AddCommand(self, current))
-                self.set_tool(Tool.SELECT)
+                self._finish_create()
 
     @staticmethod
     def _too_small(item: Annotation) -> bool:
