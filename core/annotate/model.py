@@ -15,6 +15,8 @@ from core.annotate.style import (
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
+    STEP_RADIUS,
+    STEP_STROKE,
     TAN,
     TEXT_PRESETS,
 )
@@ -32,6 +34,13 @@ class ArrowSide(str, Enum):
 class TextAlign(str, Enum):
     LEFT = "left"
     CENTER = "center"
+
+
+class StepShape(str, Enum):
+    CIRCLE = "circle"
+    SQUARE = "square"
+    ROUNDED = "rounded"   # cuadrado de esquinas redondeadas
+    DIAMOND = "diamond"
 
 
 class HighlightMode(str, Enum):
@@ -110,12 +119,22 @@ class Arrow:
 
 @dataclass(frozen=True)
 class StepBadge:
-    """Circulo numerado dorado, el de los pasos de las infografias."""
+    """Paso numerado, por defecto el circulo dorado de las infografias. `color` es el del borde
+    y, si `number_color` es None, tambien el del numero. Los colores None usan el de la paleta
+    (borde y numero) o el de marca (relleno)."""
 
     id: str
     center: tuple[float, float]
     number: int
     color: str | None = None
+    shape: StepShape = StepShape.CIRCLE
+    fill_color: str | None = None
+    number_color: str | None = None
+    size: float = STEP_RADIUS                 # radio (mitad del lado), a escala 1
+    number_size: float | None = None          # None = automatico (proporcional a `size`)
+    border_width: float = STEP_STROKE
+    glow: bool = False
+    glow_color: str | None = None
 
 
 @dataclass(frozen=True)

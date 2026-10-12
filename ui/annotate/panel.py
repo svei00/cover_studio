@@ -36,12 +36,14 @@ from core.annotate.model import (
     Marker,
     Redaction,
     StepBadge,
+    StepShape,
     TextAlign,
     TextLabel,
 )
 from core.annotate.palette import BRAND_PALETTE, PALETTE_LABELS
 from core.annotate.primitives import doc_scale
 from core.annotate.style import (
+    CARD_FILL,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
@@ -50,9 +52,17 @@ from core.annotate.style import (
     HIGHLIGHT_SWATCHES,
     MAX_HIGHLIGHT_RADIUS,
     MAX_LENS_FRAME_WIDTH,
+    MAX_NUMBER_SIZE,
     MAX_SCALE,
+    MAX_STEP_SIZE,
+    MAX_STEP_STROKE,
     MIN_LENS_FRAME_WIDTH,
+    MIN_NUMBER_SIZE,
     MIN_SCALE,
+    MIN_STEP_SIZE,
+    MIN_STEP_STROKE,
+    STEP_RADIUS,
+    STEP_STROKE,
     TEXT_PRESETS,
 )
 from ui.annotate.controller import DEFAULT_REDACTION_BLOCK, EditController, Tool
@@ -67,6 +77,12 @@ ARROW_LABELS = {
     ArrowSide.NONE: "Sin flecha",
 }
 ALIGN_LABELS = {TextAlign.LEFT: "Izquierda", TextAlign.CENTER: "Centrada"}
+STEP_SHAPE_LABELS = {
+    StepShape.CIRCLE: "Circulo",
+    StepShape.SQUARE: "Cuadrado",
+    StepShape.ROUNDED: "Cuadrado redondeado",
+    StepShape.DIAMOND: "Rombo",
+}
 LENS_SHAPE_LABELS = {
     LensShape.CIRCLE: "Circular",
     LensShape.ELLIPSE: "Ovalada",
@@ -452,7 +468,45 @@ class PropertiesPanel(QWidget):
         self._step_number.setRange(1, 999)
         self._step_number.valueChanged.connect(lambda v: self._apply(number=v))
         form.addRow("Numero", self._step_number)
-        self._step_color = self._color_row(form, "Color", "color")
+        self._step_shape = QComboBox()
+        for shape, label in STEP_SHAPE_LABELS.items():
+            self._step_shape.addItem(label, shape.value)
+        self._step_shape.currentIndexChanged.connect(
+            lambda _i: self._apply(shape=StepShape(self._step_shape.currentData()))
+        )
+        self._field_row(form, "Forma", self._step_shape, "shape", StepShape.CIRCLE)
+        self._step_color = self._color_row(form, "Borde", "color")
+        self._step_fill = self._color_row(form, "Relleno", "fill_color")
+        self._step_number_color = self._color_row(form, "Color numero", "number_color")
+        self._step_size = QDoubleSpinBox()
+        self._step_size.setRange(MIN_STEP_SIZE, MAX_STEP_SIZE)
+        self._step_size.setDecimals(1)
+        self._step_size.setSingleStep(1.0)
+        self._step_size.setSuffix(" px")
+        self._step_size.setToolTip("Radio del paso (la mitad de su ancho)")
+        self._step_size.valueChanged.connect(lambda v: self._apply(size=float(v)))
+        self._field_row(form, "Tamano", self._step_size, "size", STEP_RADIUS)
+        self._step_number_size = QDoubleSpinBox()
+        self._step_number_size.setRange(0.0, MAX_NUMBER_SIZE)
+        self._step_number_size.setDecimals(1)
+        self._step_number_size.setSingleStep(1.0)
+        self._step_number_size.setSuffix(" px")
+        self._step_number_size.setSpecialValueText("Auto")
+        self._step_number_size.setToolTip("Auto = proporcional al tamano del paso")
+        self._step_number_size.valueChanged.connect(lambda v: self._apply(number_size=max(float(v), MIN_NUMBER_SIZE) if v > 0 else None))
+        self._field_row(form, "Tam. numero", self._step_number_size, "number_size", None)
+        self._step_stroke = QDoubleSpinBox()
+        self._step_stroke.setRange(MIN_STEP_STROKE, MAX_STEP_STROKE)
+        self._step_stroke.setDecimals(1)
+        self._step_stroke.setSingleStep(0.5)
+        self._step_stroke.setSuffix(" px")
+        self._step_stroke.valueChanged.connect(lambda v: self._apply(border_width=float(v)))
+        self._field_row(form, "Grosor borde", self._step_stroke, "border_width", STEP_STROKE)
+        self._step_glow = QCheckBox("Resplandor")
+        self._step_glow.toggled.connect(lambda on: self._apply(glow=on))
+        form.addRow(self._step_glow)
+        self._step_form = form
+        self._step_glow_color = self._color_row(form, "Color", "glow_color")
         return page
 
     def _build_text_page(self) -> QWidget:
@@ -611,6 +665,21 @@ class PropertiesPanel(QWidget):
                 if self._step_number.value() != item.number:
                     self._step_number.setValue(item.number)
                 self._step_color.set_value(item.color or pal.step, item.color is not None)
+                self._set_combo(self._step_shape, item.shape.value)
+                self._step_fill.set_value(item.fill_color or CARD_FILL, item.fill_color is not None)
+                self._step_number_color.set_value(
+                    item.number_color or item.color or pal.step, item.number_color is not None
+                )
+                if abs(self._step_size.value() - item.size) > 1e-9:
+                    self._step_size.setValue(item.size)
+                number_size = item.number_size or 0.0
+                if abs(self._step_number_size.value() - number_size) > 1e-9:
+                    self._step_number_size.setValue(number_size)
+                if abs(self._step_stroke.value() - item.border_width) > 1e-9:
+                    self._step_stroke.setValue(item.border_width)
+                self._step_glow.setChecked(item.glow)
+                self._step_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._step_form.setRowVisible(self._step_glow_color, item.glow)
             elif isinstance(item, TextLabel):
                 self._pages.setCurrentIndex(_PAGE_TEXT)
                 self._title.setText("Etiqueta de texto")

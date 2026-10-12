@@ -401,3 +401,28 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Elegir un lado en el panel pide la flecha AUTOMATICA de ese lado (suelta la propia); el boton de restablecer
   del lado y "Recolocar flecha" (solo visible con flecha propia) la devuelven a automatica.
 - `"arrow_start"`/`"arrow_tip"` en el JSON; si falta o es invalido uno de los dos, ninguno cuenta.
+
+### Herramientas que se quedan activas
+
+- `controller.STICKY_TOOLS` = Marcador, Recuadro, Resaltar, Flecha, Paso, Pixelar y Lupa: tras dibujar, la
+  anotacion nueva queda seleccionada (su panel visible y editable) y la herramienta SIGUE activa, para dibujar
+  otra sin volver a elegirla. El texto no (abre su editor): vuelve a Seleccionar. Se sale con Esc (la ultima
+  anotacion queda seleccionada; un segundo Esc deselecciona) o eligiendo otra herramienta.
+- Con una herramienta activa, arrastrar sobre algo ya dibujado crea otra anotacion en vez de seleccionarlo: para
+  mover o redimensionar se sale a Seleccionar. Esc a mitad de un gesto lo cancela y sale de la herramienta.
+- Los tooltips de esas herramientas lo avisan. Los tests que dibujaban y luego editaban dan por hecho el cambio
+  con `tab.tool_buttons[Tool.SELECT].click()` despues de dibujar.
+
+### Paso numerado: forma, colores, tamano y resplandor
+
+- `StepBadge` suma `shape` (`StepShape`: circulo, cuadrado, cuadrado redondeado, rombo), `fill_color`,
+  `number_color`, `size` (radio a escala 1, 20), `number_size` (None = automatico, proporcional: 17/20 del
+  radio), `border_width` (2.5), `glow` y `glow_color`. `color` sigue siendo el borde y, si `number_color` es None,
+  tambien el numero. Con los valores por defecto el dibujo es identico al de siempre (hay un test que lo fija).
+- El rombo usa semidiagonal = 1.25 x radio (misma area que el circulo); `primitives.step_extent` da el
+  semi-ancho de cada forma y lo usan la seleccion, las cajas y `item_bounds`. El clic respeta la forma (circulo:
+  distancia; cuadrados: caja; rombo: |dx| + |dy|).
+- Resplandor: los 9 anillos del marcador siguiendo la forma (el del rombo se ensancha `o * raiz(2)`), debajo del
+  paso. Panel: forma, tres colores (doble clic en la etiqueta = valor de fabrica), tamano, tamano del numero
+  ("Auto" = 0), grosor y resplandor, todos con restablecer.
+- No hay asas de tamano en el lienzo (solo el panel). Los pasos nuevos salen siempre con el estilo de fabrica.

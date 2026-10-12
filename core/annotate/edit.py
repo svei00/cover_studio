@@ -21,9 +21,10 @@ from core.annotate.model import (
     Rect,
     Redaction,
     StepBadge,
+    StepShape,
     TextLabel,
 )
-from core.annotate.primitives import label_box
+from core.annotate.primitives import label_box, step_extent
 
 Point = tuple[float, float]
 
@@ -110,7 +111,13 @@ def hit_item(
     if isinstance(item, Arrow):
         return distance_to_segment(p, item.start, item.end) <= tol
     if isinstance(item, StepBadge):
-        return math.hypot(p[0] - item.center[0], p[1] - item.center[1]) <= style.STEP_RADIUS * scale + tol / 2
+        dx, dy = abs(p[0] - item.center[0]), abs(p[1] - item.center[1])
+        reach = step_extent(item, scale) + tol / 2
+        if item.shape is StepShape.CIRCLE:
+            return math.hypot(dx, dy) <= reach
+        if item.shape is StepShape.DIAMOND:
+            return dx + dy <= reach
+        return dx <= reach and dy <= reach
     if isinstance(item, TextLabel):
         return _contains(label_box(item, scale).inflate(tol / 2), p)
     if isinstance(item, Magnifier):
@@ -193,7 +200,7 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
         y0, y1 = sorted((item.start[1], item.end[1]))
         return Rect(x0, y0, x1 - x0, y1 - y0)
     if isinstance(item, StepBadge):
-        r = style.STEP_RADIUS * scale
+        r = step_extent(item, scale)
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
     if isinstance(item, Magnifier):
         return lens.lens_rect(item)

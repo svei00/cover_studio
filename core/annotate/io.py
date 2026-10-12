@@ -16,7 +16,15 @@ from core.annotate.style import (
     HIGHLIGHT_RADIUS,
     MAX_HIGHLIGHT_RADIUS,
     MAX_LENS_FRAME_WIDTH,
+    MAX_NUMBER_SIZE,
+    MAX_STEP_SIZE,
+    MAX_STEP_STROKE,
     MIN_LENS_FRAME_WIDTH,
+    MIN_NUMBER_SIZE,
+    MIN_STEP_SIZE,
+    MIN_STEP_STROKE,
+    STEP_RADIUS,
+    STEP_STROKE,
 )
 from core.annotate.model import (
     Annotation,
@@ -31,6 +39,7 @@ from core.annotate.model import (
     Rect,
     Redaction,
     StepBadge,
+    StepShape,
     TextAlign,
     TextLabel,
 )
@@ -77,6 +86,20 @@ def _number_or_default(value: object, low: float, high: float, default: float) -
     return default
 
 
+def _number_or_none(value: object, low: float, high: float) -> float | None:
+    """Un numero dentro de [low, high]; cualquier otra cosa es None (el valor automatico)."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high:
+        return float(value)
+    return None
+
+
+def _step_shape_or_default(value: object) -> StepShape:
+    try:
+        return StepShape(value)
+    except ValueError:
+        return StepShape.CIRCLE
+
+
 def _highlight_mode_or_default(value: object) -> HighlightMode:
     try:
         return HighlightMode(value)
@@ -117,7 +140,9 @@ def item_to_dict(item: Annotation) -> dict:
                 "glow_color": item.glow_color}
     if isinstance(item, StepBadge):
         return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
-                "color": item.color}
+                "color": item.color, "shape": item.shape.value, "fill_color": item.fill_color,
+                "number_color": item.number_color, "size": item.size, "number_size": item.number_size,
+                "border_width": item.border_width, "glow": item.glow, "glow_color": item.glow_color}
     if isinstance(item, TextLabel):
         return {"type": "text", "id": item.id, "pos": list(item.pos), "text": item.text,
                 "size": item.size, "color": item.color, "bold": item.bold, "bg": item.bg,
@@ -154,7 +179,15 @@ def item_from_dict(data: dict) -> Annotation:
                 _color_or_none(data.get("color")), _color_or_none(data.get("glow_color")),
             )
         if kind == "step":
-            return StepBadge(data["id"], tuple(data["center"]), data["number"], _color_or_none(data.get("color")))
+            return StepBadge(
+                data["id"], tuple(data["center"]), data["number"], _color_or_none(data.get("color")),
+                _step_shape_or_default(data.get("shape")), _color_or_none(data.get("fill_color")),
+                _color_or_none(data.get("number_color")),
+                _number_or_default(data.get("size"), MIN_STEP_SIZE, MAX_STEP_SIZE, STEP_RADIUS),
+                _number_or_none(data.get("number_size"), MIN_NUMBER_SIZE, MAX_NUMBER_SIZE),
+                _number_or_default(data.get("border_width"), MIN_STEP_STROKE, MAX_STEP_STROKE, STEP_STROKE),
+                data.get("glow") is True, _color_or_none(data.get("glow_color")),
+            )
         if kind == "text":
             return TextLabel(
                 id=data["id"], pos=tuple(data["pos"]), text=data["text"], size=data["size"],

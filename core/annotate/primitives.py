@@ -23,6 +23,7 @@ from core.annotate.model import (
     Marker,
     Rect,
     StepBadge,
+    StepShape,
     TextAlign,
     TextLabel,
 )
@@ -261,12 +262,48 @@ def arrow_primitives(a: Arrow, scale: float, palette: Palette = BRAND_PALETTE) -
     return _arrow_parts(a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow)
 
 
+def step_extent(s: StepBadge, scale: float) -> float:
+    """Semi-ancho del paso desde su centro (el rombo es mas ancho que el circulo del mismo radio)."""
+    r = s.size * scale
+    return r * style.STEP_DIAMOND_FACTOR if s.shape is StepShape.DIAMOND else r
+
+
+def _diamond(center: Point, half: float) -> tuple[Point, Point, Point, Point]:
+    cx, cy = center
+    return (cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)
+
+
 def step_primitives(s: StepBadge, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
-    color = s.color or palette.step
-    return [
-        PCircle(s.center, style.STEP_RADIUS * scale, style.CARD_FILL, color, style.STEP_STROKE * scale),
-        PText(s.center, str(s.number), style.STEP_FONT_SIZE * scale, color, True, "middle"),
-    ]
+    border = s.color or palette.step
+    fill = s.fill_color or style.CARD_FILL
+    number_color = s.number_color or border
+    r = s.size * scale
+    sw = s.border_width * scale
+    font = (s.number_size if s.number_size else s.size * style.STEP_NUMBER_RATIO) * scale
+    cx, cy = s.center
+    box = Rect(cx - r, cy - r, 2 * r, 2 * r)
+    corner = r * style.STEP_ROUNDED_CORNER if s.shape is StepShape.ROUNDED else 0.0
+    out: list[Primitive] = []
+    if s.glow:
+        glow_color = s.glow_color or palette.glow
+        for off, op in style.GLOW_RINGS:
+            o = max(0.0, off + (s.border_width - style.MARKER_STROKE) / 2) * scale
+            width = style.GLOW_RING_WIDTH * scale
+            if s.shape is StepShape.CIRCLE:
+                out.append(PCircle(s.center, r + o, None, glow_color, width, opacity=op))
+            elif s.shape is StepShape.DIAMOND:
+                half = r * style.STEP_DIAMOND_FACTOR + o * math.sqrt(2)   # un rombo ensanchado `o` por cada lado
+                out.append(PPolygon(_diamond(s.center, half), None, glow_color, width, op))
+            else:
+                out.append(PRect(box.inflate(o), glow_color, width, op, corner + o))
+    if s.shape is StepShape.CIRCLE:
+        out.append(PCircle(s.center, r, fill, border, sw))
+    elif s.shape is StepShape.DIAMOND:
+        out.append(PPolygon(_diamond(s.center, r * style.STEP_DIAMOND_FACTOR), fill, border, sw))
+    else:
+        out.append(PRect(box, border, sw, 1.0, corner, fill=fill))
+    out.append(PText(s.center, str(s.number), font, number_color, True, "middle"))
+    return out
 
 
 def highlight_primitives(h: Highlight, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
@@ -343,7 +380,7 @@ def item_bounds(item: Annotation, scale: float) -> Rect | None:
         y0, y1 = sorted((item.start[1], item.end[1]))
         return Rect(x0, y0, x1 - x0, y1 - y0).inflate(style.ARROW_HEAD * scale)
     if isinstance(item, StepBadge):
-        r = style.STEP_RADIUS * scale
+        r = step_extent(item, scale)
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
     if isinstance(item, TextLabel):
         return label_box(item, scale)

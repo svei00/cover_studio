@@ -57,6 +57,15 @@ ARROW_GLOW_EXTRA = 8.0
 STEP_RADIUS = 20.0
 STEP_STROKE = 2.5
 STEP_FONT_SIZE = 17.0
+STEP_NUMBER_RATIO = STEP_FONT_SIZE / STEP_RADIUS   # tamano automatico del numero respecto al paso
+STEP_DIAMOND_FACTOR = 1.25      # semidiagonal del rombo / radio: misma area que el circulo
+STEP_ROUNDED_CORNER = 0.4       # esquinas del cuadrado redondeado, como fraccion del radio
+MIN_STEP_SIZE = 8.0
+MAX_STEP_SIZE = 80.0
+MIN_STEP_STROKE = 0.5
+MAX_STEP_STROKE = 12.0
+MIN_NUMBER_SIZE = 6.0
+MAX_NUMBER_SIZE = 120.0
 
 TEXT_LINE_HEIGHT = 1.25
 
