@@ -7,15 +7,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QWheelEvent
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QWheelEvent
+from PySide6.QtWidgets import QMenu, QSizePolicy, QWidget
 
 from core.annotate import crop as cropping
 from core.annotate import edit
 from core.annotate.model import Arrow, Rect
 from core.annotate.primitives import Primitive
 from core.annotate.style import CARD_FILL
+from ui.annotate.context_menu import build_context_menu
 from ui.annotate.controller import EditController, Tool
 from ui.annotate.painter import paint_primitives
 
@@ -382,6 +383,22 @@ class AnnotateCanvas(QWidget):
         self.setFocus()
         additive = bool(event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier))   # suma o quita de la seleccion
         self._controller.press(self.view_to_image(event.position()), self._tolerance(), additive)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802 (Qt override)
+        """Clic derecho sobre una anotacion: la selecciona (si no lo estaba) y abre su menu. En un hueco no hay menu."""
+        if self._controller is None or not self.has_image():
+            return
+        point = self.view_to_image(QPointF(event.pos()))
+        if not self._controller.select_for_context_menu(point, self._tolerance()):
+            return
+        menu = build_context_menu(self._controller, self)
+        if menu is not None:
+            self._exec_menu(menu, event.globalPos())
+        event.accept()
+
+    def _exec_menu(self, menu: QMenu, global_pos: QPoint) -> None:
+        """Abre el menu y espera a que se elija algo. Aparte para que las pruebas lo sustituyan: un menu real es modal."""
+        menu.exec(global_pos)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)
         if self._pan_last is not None:

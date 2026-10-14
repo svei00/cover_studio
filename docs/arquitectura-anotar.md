@@ -769,7 +769,25 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - **Trampa que costo un bug**: las paginas del panel se registran con `addWidget` en el MISMO orden que sus indices `_PAGE_*`;
   registrar una en medio desplaza las demas y el panel muestra la pagina equivocada (los tests que solo comparan `currentIndex` no lo
   ven). Ahora hay un test que comprueba que cada indice apunta a su pagina.
-- **Pendiente (fase 2)**: menu contextual de clic derecho sobre una anotacion (Sombra, Tamano real, Traer al frente, Enviar atras,
-  Borrar; el lienzo hoy no tiene menu), reordenar capas (hoy el orden es el de la lista y no hay forma de cambiarlo), y la fase 3
-  (nuevo lienzo en blanco para componer varias capturas; pendiente de confirmar con el usuario). La fase B de iconos (emojis como
-  stickers, que "se incrustan como imagen") puede reutilizar `ImageOverlay`.
+- **Pendiente**: fase 3 (nuevo lienzo en blanco para componer varias capturas; pendiente de confirmar con el usuario). La fase B
+  de iconos (emojis como stickers, que "se incrustan como imagen") puede reutilizar `ImageOverlay`.
+
+### Menu de clic derecho y orden de las capas (fase 2)
+
+- **Orden = el de `doc.items`** (lo ultimo se dibuja encima). `core/annotate/layers.py` (puro): `Order` (FRONT, BACK, FORWARD,
+  BACKWARD), `reorder(items, selected, mode)`, `can_reorder`, `layer_of`. Tres grupos que se reordenan POR SEPARADO y devuelven sus
+  elementos a las mismas posiciones de la lista: las IMAGENES PEGADAS (se componen en el bitmap y siempre quedan DEBAJO de las
+  anotaciones: "traer al frente" solo las pone por encima de otras imagenes), las anotaciones (marcadores, flechas, texto, lupas...) y
+  los que no se apilan visualmente (pixelado y foco: no tienen orden que cambiar). Varias seleccionadas conservan su orden relativo.
+- Controlador: `reorder_selected(mode)` (UN paso, `_ReorderCommand` guarda el orden de ids antes y despues; si no cambiaria nada no
+  agrega paso), `can_reorder(mode)`, `item_id_at`, `select_for_context_menu(punto, tol)`: el clic derecho conserva la seleccion si cae
+  sobre una anotacion que ya estaba seleccionada (el menu actua sobre todas) y si no la cambia por la nueva; solo con la herramienta
+  Seleccionar y sin un gesto en curso; en un hueco no hay menu.
+- Menu: `ui/annotate/context_menu.py::build_context_menu(controller)` (cada accion lleva su clave en `data()`): una imagen pegada
+  agrega "Sombra flotante" (casilla) y "Tamano real (1:1)"; para cualquier seleccion: Traer al frente, Subir un nivel, Bajar un nivel,
+  Enviar atras (deshabilitadas si no cambiarian nada) y Borrar (con el conteo si son varias). Lo abre `AnnotateCanvas.contextMenuEvent`
+  via `_exec_menu`, un punto de sustitucion: **un `QMenu.exec` real es modal y cuelga pytest** (y `monkeypatch` sobre `QMenu.exec` NO lo
+  intercepta), asi que `tests/conftest.py` lo anula por defecto, igual que `_ask_discard`; las pruebas del menu lo registran.
+- La pagina de propiedades de la imagen pegada tiene tambien los botones "Al frente" / "Atras".
+- No hecho: atajos de teclado para el orden (Photoshop usa Ctrl+] y Ctrl+[), y un menu al hacer clic derecho en un hueco (p. ej. "Pegar
+  encima").

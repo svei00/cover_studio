@@ -17,6 +17,9 @@ def _sin_dialogos_modales(monkeypatch):
     except ImportError:  # PySide6 no instalado: las pruebas de UI se omiten solas
         return
     monkeypatch.setattr(AnnotateTab, "_ask_discard", lambda self: "discard")
+    # lo mismo con el menu de clic derecho del lienzo: un QMenu.exec real es modal y cuelga la prueba
+    from ui.annotate.canvas import AnnotateCanvas
+    monkeypatch.setattr(AnnotateCanvas, "_exec_menu", lambda self, menu, global_pos: None)
 
 
 @pytest.fixture(autouse=True)

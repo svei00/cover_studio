@@ -18,6 +18,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
 from core.annotate import align as aligning
+from core.annotate import layers
 from core.annotate import crop as cropping
 from core.annotate import freehand
 from core.annotate import overlay as overlay_geometry
@@ -110,6 +111,22 @@ class _AddCommand(QUndoCommand):
 
     def undo(self) -> None:
         self._controller._remove(self._item.id)
+
+
+class _ReorderCommand(QUndoCommand):
+    """Cambia el orden de apilado (Traer al frente, Enviar atras...): UN paso. Guarda el orden de ids antes y despues."""
+
+    def __init__(self, controller: EditController, before: list[str], after: list[str], text: str) -> None:
+        super().__init__(text)
+        self._controller = controller
+        self._before = before
+        self._after = after
+
+    def redo(self) -> None:
+        self._controller._set_order(self._after)
+
+    def undo(self) -> None:
+        self._controller._set_order(self._before)
 
 
 class _RemoveCommand(QUndoCommand):
@@ -406,6 +423,15 @@ class EditController(QObject):
             index = edit.find_index(self.doc.items, item.id)
             if index is not None:
                 self.doc.items[index] = item
+        self.changed.emit()
+
+    def _set_order(self, ids: Sequence[str]) -> None:
+        """Pone `doc.items` en el orden de `ids` (el mismo objeto lista; lo que no este en `ids` se queda al final)."""
+        if self.doc is None:
+            return
+        by_id = {item.id: item for item in self.doc.items}
+        ordered = [by_id.pop(i) for i in ids if i in by_id]
+        self.doc.items[:] = ordered + list(by_id.values())
         self.changed.emit()
 
     def _set_doc_property(self, attr: str, value: object) -> None:
@@ -818,6 +844,47 @@ class EditController(QObject):
             return
         items, boxes = self._selected_boxes()
         self._apply_deltas(items, aligning.distribute_deltas(boxes, axis), "Distribuir")
+
+    # ------------------------------------------------------------------
+    # Orden de las capas y menu contextual
+    # ------------------------------------------------------------------
+
+    _ORDER_TEXT = {
+        layers.Order.FRONT: "Traer al frente", layers.Order.BACK: "Enviar atras",
+        layers.Order.FORWARD: "Subir un nivel", layers.Order.BACKWARD: "Bajar un nivel",
+    }
+
+    def can_reorder(self, mode: layers.Order) -> bool:
+        """True si `mode` cambiaria algo para lo seleccionado (lo que ya esta arriba no se puede traer al frente)."""
+        return self.doc is not None and bool(self._selected) and layers.can_reorder(self.doc.items, self._selected, mode)
+
+    def reorder_selected(self, mode: layers.Order) -> None:
+        """Mueve lo seleccionado en el apilado, en UN paso de deshacer. Las imagenes pegadas se ordenan entre ellas (siempre
+        quedan debajo de las anotaciones); ver `core/annotate/layers.py`."""
+        if self.doc is None or not self.can_reorder(mode):
+            return
+        before = [i.id for i in self.doc.items]
+        after = [i.id for i in layers.reorder(self.doc.items, self._selected, mode)]
+        self.stack.push(_ReorderCommand(self, before, after, self._ORDER_TEXT[mode]))
+
+    def item_id_at(self, p: Point, tol: float) -> str | None:
+        """La anotacion que se veria bajo el punto (la misma que seleccionaria un clic)."""
+        if self.doc is None:
+            return None
+        return edit.hit_test(self.doc.items, p, tol, self.scale(), self.marker_arrows())
+
+    def select_for_context_menu(self, p: Point, tol: float) -> bool:
+        """Clic derecho: si cae sobre una anotacion que ya esta seleccionada se conserva la seleccion (asi el menu actua sobre
+        todas); si cae sobre otra, pasa a ser la unica seleccionada. True si hay sobre que abrir el menu. Solo con la herramienta
+        Seleccionar y sin un gesto en curso."""
+        if self.doc is None or self.tool is not Tool.SELECT or self._mode is not None:
+            return False
+        hit = self.item_id_at(p, tol)
+        if hit is None:
+            return False
+        if hit not in self._selected:
+            self.select(hit)
+        return True
 
     def delete_selected(self) -> None:
         if self.doc is None:

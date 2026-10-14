@@ -7,7 +7,7 @@ anterior estaba desactualizado; todo su backlog esta HECHO.)
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1426 tests pasan.** Arbol limpio y todo subido:
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1453 tests pasan.** Arbol limpio y todo subido:
 el ultimo commit es `01951c6` (Escalar + colores de marca); antes `458a13e` (lapiz UI + Foco) y `fe2374d`
 (nucleo del lapiz).
 
@@ -88,16 +88,19 @@ caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (
 Ver `docs/arquitectura-anotar.md` ("Seleccion multiple, alinear y distribuir"). Tests: `test_annotate_multiselect.py`,
 `test_annotate_align.py`. **`selected_item()` es None con 2+ seleccionadas**: todo lo que edita propiedades es de una sola.
 
-### 3.1e Pegar encima (Ctrl+Shift+V): FASE 1 HECHA (sin commitear al escribir esto)
-Ver `docs/arquitectura-anotar.md` ("Pegar encima"). Tests: `test_annotate_overlay.py` (nucleo) y `test_annotate_overlay_ui.py`.
+### 3.1e Pegar encima (Ctrl+Shift+V): FASES 1 Y 2 HECHAS
+Ver `docs/arquitectura-anotar.md` ("Pegar encima" y "Menu de clic derecho y orden de las capas"). Tests: `test_annotate_overlay.py`,
+`test_annotate_overlay_ui.py`, `test_annotate_layers.py`. Fase 1 commiteada (`77736a0`); la fase 2 (menu de clic derecho, Traer al
+frente / Enviar atras, botones en el panel) esta hecha y SIN commitear al escribir esto.
 **Pendiente, ya decidido con el usuario (2026-10-25):**
-- **Fase 2**: menu contextual de clic derecho sobre una anotacion (Sombra, Tamano real, Traer al frente, Enviar atras, Borrar;
-  reutilizable para todas) y reordenar capas. Hoy el lienzo no tiene menu y el orden es el de la lista.
 - **Fase 3** (confirmar con el usuario si entra): "Nuevo lienzo en blanco" (p. ej. 1920x1080 o del tamano del portapapeles) para armar
   composiciones con varias capturas; la captura base seria un PNG blanco generado.
-- **La sombra se recorta en el borde de la captura** (el "Margen extra" no la deja salir). Se le dijo al usuario que si; hay que
-  corregirselo o implementar la composicion sobre un lienzo ampliado.
+- **La sombra se recorta en el borde de la captura** (el "Margen extra" no la deja salir). Se le dijo al usuario que si; ya se le corrigio
+  en la sesion, pero falta implementar la composicion sobre un lienzo ampliado si la quiere.
+- Atajos de teclado para el orden (Ctrl+] / Ctrl+[) y un menu en el hueco (Pegar encima): no pedidos.
 - Fase B de iconos (emojis como stickers) puede reutilizar `ImageOverlay`.
+- **Trampa de pruebas nueva**: un `QMenu.exec` real cuelga pytest y `monkeypatch` sobre `QMenu.exec` no lo intercepta; usa el punto
+  `AnnotateCanvas._exec_menu` (conftest lo anula).
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.

@@ -54,6 +54,7 @@ from core.annotate.model import (
     TextLabel,
 )
 from core.annotate import overlay as overlay_geometry
+from core.annotate.layers import Order
 from core.annotate.palette import PALETTE_LABELS
 from core.brand import brand_palette
 from core.annotate.primitives import doc_scale
@@ -971,6 +972,18 @@ class PropertiesPanel(QWidget):
         self._img_real.setToolTip("Vuelve a su tamano original, que es como se ve mas nitida")
         self._img_real.clicked.connect(self._c.reset_overlay_size)
         form.addRow(self._img_real)
+        order_row = QWidget()
+        order_layout = QHBoxLayout(order_row)
+        order_layout.setContentsMargins(0, 0, 0, 0)
+        self._img_front = QPushButton("Al frente")
+        self._img_front.setToolTip("Por encima de las demas imagenes pegadas (siempre quedan debajo de las anotaciones)")
+        self._img_front.clicked.connect(lambda: self._c.reorder_selected(Order.FRONT))
+        self._img_back = QPushButton("Atras")
+        self._img_back.setToolTip("Por debajo de las demas imagenes pegadas")
+        self._img_back.clicked.connect(lambda: self._c.reorder_selected(Order.BACK))
+        order_layout.addWidget(self._img_front)
+        order_layout.addWidget(self._img_back)
+        form.addRow(order_row)
         self._img_opacity = QSpinBox()
         self._img_opacity.setRange(5, 100)
         self._img_opacity.setSuffix(" %")
@@ -1344,6 +1357,8 @@ class PropertiesPanel(QWidget):
                         f"({item.size[0]} x {item.size[1]})")
                 self._img_info.setText(text + (". Ampliada: se ve suavizada." if pct > 100.5 else "."))
                 self._img_real.setEnabled(not overlay_geometry.is_real_size(item))
+                self._img_front.setEnabled(self._c.can_reorder(Order.FRONT))
+                self._img_back.setEnabled(self._c.can_reorder(Order.BACK))
                 if self._img_opacity.value() != round(item.opacity * 100):
                     self._img_opacity.setValue(round(item.opacity * 100))
                 self._set_spin(self._img_corner, item.corner)
