@@ -91,6 +91,17 @@ MAX_FOCUS_DIM = 0.95
 MAX_FOCUS_BLUR = 60.0     # radio maximo del desenfoque, en px de la captura
 MAX_FOCUS_CORNER = 200.0
 
+# Imagen pegada encima (Ctrl+Shift+V): se compone en el bitmap. La sombra "flotante" imita la de los menus de Windows 11:
+# suave, un poco hacia abajo y tenue. Las medidas son para escala 1 y se multiplican por la escala del documento.
+MIN_OVERLAY_SIZE = 12.0         # lado minimo al redimensionar (px de la captura)
+MAX_OVERLAY_CORNER = 80.0
+OVERLAY_SHADOW_BLUR = 10.0      # desviacion del desenfoque de la sombra
+OVERLAY_SHADOW_DY = 6.0         # cuanto cae hacia abajo
+OVERLAY_SHADOW_ALPHA = 0.34     # opacidad del negro de la sombra con intensidad 1
+MIN_SHADOW_STRENGTH = 0.1
+MAX_SHADOW_STRENGTH = 2.0
+OVERLAY_BORDER_ALPHA = 80       # 0-255: borde fino gris que separa la imagen del fondo
+
 STEP_RADIUS = 20.0
 STEP_STROKE = 2.5
 STEP_FONT_SIZE = 17.0

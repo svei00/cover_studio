@@ -261,6 +261,25 @@ class Spotlight:
 
 
 @dataclass(frozen=True)
+class ImageOverlay:
+    """Imagen pegada encima de la captura (Ctrl+Shift+V): p. ej. el recorte de un menu que ya no se ve al abrir otro. Se
+    compone en el BITMAP, antes del pixelado, de las lupas y del foco: asi Pixelar tambien anonimiza lo pegado y las
+    anotaciones quedan por encima. `path` es el archivo guardado (el proyecto lo referencia); `size` su tamano ORIGINAL
+    (para la proporcion y para "Tamano real"); `rect` donde va, en pixeles de la captura. Se remuestrea siempre desde el
+    original. La sombra imita la flotante de Windows 11."""
+
+    id: str
+    path: str
+    size: tuple[int, int]
+    rect: Rect
+    opacity: float = 1.0
+    corner: float = 0.0            # esquinas redondeadas, en px de la captura
+    shadow: bool = False
+    shadow_strength: float = 1.0   # multiplica la opacidad de la sombra
+    border: bool = False           # borde fino gris
+
+
+@dataclass(frozen=True)
 class Magnifier:
     """Lupa: amplia `source` (region de la imagen) en un lente aparte centrado en
     `lens_center`. El tamano del lente es el del origen por `zoom`; con forma
@@ -333,7 +352,7 @@ class Stroke:
     glow_size: float = DEFAULT_GLOW_SIZE
 
 
-Annotation = Marker | Arrow | StepBadge | Icon | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight
+Annotation = Marker | Arrow | StepBadge | Icon | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight | ImageOverlay
 
 
 @dataclass

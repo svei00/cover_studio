@@ -32,9 +32,17 @@ from core.annotate.bounds import required_padding
 from core.brand import brand_palette
 from core.annotate.errors import AnnotateError
 from core.annotate.io import load_doc, save_doc, sidecar_path
-from core.annotate.model import AnnotationDoc, IconKind, Magnifier, Redaction
+from core.annotate.model import AnnotationDoc, IconKind, ImageOverlay, Magnifier, Redaction
 from core.annotate.primitives import build_primitives
-from core.annotate.raster import active_spotlight, apply_redactions, apply_spotlight, lens_crops, load_image
+from core.annotate.raster import (
+    active_spotlight,
+    apply_overlays,
+    apply_redactions,
+    apply_spotlight,
+    lens_crops,
+    load_image,
+    missing_overlays,
+)
 from core.annotate.upscale import FACTORS, save_upscaled, scaled_output_path
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
@@ -144,6 +152,7 @@ class AnnotateTab(QWidget):
         self._base_qimage: QImage | None = None
         self._redacted: Image.Image | None = None
         self._spot_key: object = None
+        self._warned_missing: set[str] = set()   # imagenes pegadas cuyo archivo falta y ya se aviso
         self._lens_cache: dict[str, tuple[tuple, QImage]] = {}
 
         tools = FlowLayout()   # si no caben en una fila, bajan a la siguiente (la ventana no se ensancha)
@@ -161,6 +170,15 @@ class AnnotateTab(QWidget):
             self.tool_buttons[tool] = button
             tools.addWidget(button)
         self.tool_buttons[Tool.SELECT].setChecked(True)
+        self.paste_over_btn = QToolButton()
+        self.paste_over_btn.setText("Pegar encima")
+        self.paste_over_btn.setToolTip(
+            "CTRL + MAYUS + V: pega la imagen del portapapeles ENCIMA de la captura (a su tamano real) para moverla y "
+            "redimensionarla; CTRL + V sigue reemplazando la captura"
+        )
+        self.paste_over_btn.setEnabled(False)
+        self.paste_over_btn.clicked.connect(self.paste_overlay)
+        tools.addWidget(self.paste_over_btn)
         self._build_icon_buttons()
         self.controller.iconDefaultsChanged.connect(self._refresh_icon_button)
         tools.addWidget(spacer(16))
@@ -222,6 +240,7 @@ class AnnotateTab(QWidget):
         self.controller.stack.cleanChanged.connect(self._on_clean_changed)
 
         for key, slot in ((QKeySequence.StandardKey.Paste, self.paste_capture),
+                          (QKeySequence("Ctrl+Shift+V"), self.paste_overlay),
                           (QKeySequence.StandardKey.Undo, self.controller.undo),
                           (QKeySequence.StandardKey.Redo, self.controller.redo),
                           (QKeySequence.StandardKey.Save, self.save_project),
@@ -375,34 +394,70 @@ class AnnotateTab(QWidget):
         QGuiApplication.clipboard().setImage(image)
         self.statusMessage.emit(f"Copiada al portapapeles ({image.width()} x {image.height()} px)")
 
-    def paste_capture(self) -> None:
-        """Pega la imagen del portapapeles (se guarda en Imagenes/Cover Studio)
-        o, si se copio un archivo de imagen, lo abre."""
+    def _clipboard_source(self, prefix: str, what: str) -> tuple[Path | None, str]:
+        """La imagen del portapapeles como archivo: (ruta, 'file') si se copio un archivo de imagen (se usa tal cual),
+        (ruta, 'saved') si era una imagen y se guardo en Imagenes/Cover Studio con un nombre nuevo, (None, 'none') si no hay
+        imagen o (None, 'error') si no se pudo guardar (ya se aviso con un cuadro)."""
         clipboard = QGuiApplication.clipboard()
         mime = clipboard.mimeData()
         if mime is not None and mime.hasUrls():
             for url in mime.urls():
                 path = Path(url.toLocalFile())
                 if path.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES:
-                    self.load_capture(path)
-                    return
+                    return path, "file"
         if mime is not None and mime.hasImage():
             image = clipboard.image()
             if not image.isNull():
                 folder = captures_dir()
-                path = folder / f"captura-{datetime.now():%Y%m%d-%H%M%S}.png"
+                stamp = f"{prefix}-{datetime.now():%Y%m%d-%H%M%S}"
                 try:
                     folder.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:
-                    QMessageBox.critical(self, "No se pudo guardar la captura pegada", str(exc))
-                    return
+                    QMessageBox.critical(self, f"No se pudo guardar {what}", str(exc))
+                    return None, "error"
+                path = folder / f"{stamp}.png"
+                n = 2
+                while path.exists():   # dos pegados en el mismo segundo no se pisan (el proyecto referencia el archivo)
+                    path = folder / f"{stamp}-{n}.png"
+                    n += 1
                 if not image.save(str(path), "PNG"):
-                    QMessageBox.critical(self, "No se pudo guardar la captura pegada", str(path))
-                    return
-                self.load_capture(path)
+                    QMessageBox.critical(self, f"No se pudo guardar {what}", str(path))
+                    return None, "error"
+                return path, "saved"
+        return None, "none"
+
+    def paste_capture(self) -> None:
+        """Pega la imagen del portapapeles (se guarda en Imagenes/Cover Studio)
+        o, si se copio un archivo de imagen, lo abre."""
+        path, how = self._clipboard_source("captura", "la captura pegada")
+        if path is not None:
+            self.load_capture(path)
+            if how == "saved":
                 self.statusMessage.emit(f"Captura pegada y guardada en {path}")
-                return
-        self.statusMessage.emit("No hay una imagen en el portapapeles.")
+        elif how == "none":
+            self.statusMessage.emit("No hay una imagen en el portapapeles.")
+
+    def paste_overlay(self) -> None:
+        """CTRL + MAYUS + V: pega la imagen del portapapeles ENCIMA de la captura abierta (a su tamano real, centrada) como
+        un elemento que se mueve y se redimensiona. La captura no se reemplaza."""
+        if self.doc is None or self.base_image is None:
+            self.statusMessage.emit("Abre primero una captura: la imagen se pega encima de ella (CTRL + V la abre).")
+            return
+        path, how = self._clipboard_source("pegada", "la imagen pegada")
+        if path is None:
+            if how == "none":
+                self.statusMessage.emit("No hay una imagen en el portapapeles.")
+            return
+        try:
+            size = load_image(path).size
+        except AnnotateError as exc:
+            QMessageBox.critical(self, "No se pudo pegar la imagen", str(exc))
+            return
+        self.controller.add_overlay(path, size)
+        self.statusMessage.emit(
+            f"Imagen pegada encima ({size[0]} x {size[1]} px). Arrastrala para moverla; las esquinas la redimensionan "
+            f"sin deformarla (Mayus mientras arrastras: libre)."
+        )
 
     def load_capture(self, path: Path, project: Path | None = None) -> None:
         """Abre una captura; si junto a ella hay un proyecto de anotaciones
@@ -440,6 +495,7 @@ class AnnotateTab(QWidget):
         self.save_btn.setEnabled(True)
         self.copy_btn.setEnabled(True)
         self.scale_btn.setEnabled(True)
+        self.paste_over_btn.setEnabled(True)
         self.controller.set_doc(doc)
         self.statusMessage.emit(f"Captura abierta: {path}{note}")
 
@@ -449,11 +505,15 @@ class AnnotateTab(QWidget):
             self.canvas.set_content(None, [])
             self.info_label.setText("Sin captura.")
             return
-        # el bitmap pixelado solo se recalcula si cambiaron los pixelados
-        key = tuple(i for i in self.doc.items if isinstance(i, Redaction))
+        # el bitmap pixelado solo se recalcula si cambiaron las imagenes pegadas (o la escala de su sombra) o los pixelados
+        overlays = tuple(i for i in self.doc.items if isinstance(i, ImageOverlay))
+        key = (overlays, round(self.controller.scale(), 4) if overlays else None,
+               tuple(i for i in self.doc.items if isinstance(i, Redaction)))
         spot_key = active_spotlight(self.doc.items)
         if key != self._base_key or self._base_qimage is None or self._redacted is None:
-            self._redacted = apply_redactions(self.base_image, self.doc.items)
+            composed = apply_overlays(self.base_image, self.doc.items, self.controller.scale())
+            self._redacted = apply_redactions(composed, self.doc.items)
+            self._warn_missing_overlays(overlays)
             self._base_key = key
             self._spot_key = object()   # el foco se aplica sobre el bitmap pixelado: hay que rehacerlo
             self._lens_cache.clear()
@@ -470,6 +530,13 @@ class AnnotateTab(QWidget):
             size += f" (recorte de {self.doc.image_size[0]} x {self.doc.image_size[1]})"
         self.info_label.setText(f"{self.doc.image_path.name} - {size} - {len(self.doc.items)} anotaciones")
         self.info_label.setToolTip(self.info_label.text())
+
+    def _warn_missing_overlays(self, overlays: tuple[ImageOverlay, ...]) -> None:
+        """Avisa (una vez por archivo) de las imagenes pegadas cuyo archivo ya no existe: no se dibujan."""
+        for path in missing_overlays(overlays):
+            if path not in self._warned_missing:
+                self._warned_missing.add(path)
+                self.statusMessage.emit(f"No se encontro la imagen pegada {path}: no se dibuja (volvio a aparecer = se muestra).")
 
     def _lens_images(self) -> dict[str, QImage]:
         """Recorte ampliado de cada lupa, tomado del bitmap YA pixelado. Se

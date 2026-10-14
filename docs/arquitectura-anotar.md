@@ -735,3 +735,41 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   "Alinear" (`_align_strip`, `_sync_align_strip`) es COMPARTIDA: vive entre el titulo y las paginas del panel, visible con 1 o mas
   seleccionadas (menos en Recortar); la pagina multiple solo conserva distribuir.
 - Pendiente: asas de tamano para varias; igualar tamanos.
+
+### Pegar encima (imagen pegada sobre la captura) — fase 1
+
+- **Uso**: Ctrl+Shift+V (y el boton "Pegar encima" de la fila de herramientas) pega la imagen del portapapeles ENCIMA de la captura
+  abierta; Ctrl+V sigue REEMPLAZANDO la captura. Tambien acepta un archivo de imagen copiado (se usa tal cual, sin copiarlo). Una imagen
+  del portapapeles se guarda en `Imagenes/Cover Studio/pegada-<fecha>.png` (`-2`, `-3`... si dos pegados caen en el mismo segundo:
+  el proyecto REFERENCIA el archivo, pisarlo corromperia el primero). Caso de uso: el recorte de un menu que ya no se ve al abrir otro.
+- **Modelo**: `ImageOverlay(id, path, size, rect, opacity, corner, shadow, shadow_strength, border)`. `size` es el tamano ORIGINAL
+  (proporcion y "Tamano real"); `rect` donde va, en px de la captura. Se agrega con `EditController.add_overlay` (un paso de deshacer,
+  queda seleccionada, vuelve a Seleccionar).
+- **Es del BITMAP, no una primitiva** (como el pixelado y el foco): `raster.apply_overlays`. Pipeline: captura -> IMAGENES PEGADAS ->
+  pixelado -> recortes de lupa -> foco -> anotaciones. Asi Pixelar tambien anonimiza lo pegado, la lupa puede ampliarlo y el foco lo
+  oscurece; las flechas y recuadros quedan siempre encima. Lo usan `svg.build_svg` y `AnnotateTab.refresh` (la clave de cache incluye
+  las imagenes y la escala, que mueve la sombra).
+- **Tamano**: entra a tamano REAL (1:1, sin remuestrear), centrada en la parte visible (`overlay.initial_rect`); solo si no cabe se
+  reduce (90 %). Redimensionar CONSERVA la proporcion del original (`edit._resize_overlay`; Mayus mientras se arrastra = libre, via
+  `controller.free_resize` que pone el lienzo en cada `mouseMove`; Mayus al PRESIONAR suma a la seleccion). Siempre se remuestrea
+  desde el ORIGINAL con LANCZOS (`raster._overlay_picture`, con cache por archivo+mtime+tamano), nunca desde una copia ya reducida:
+  agrandar, reducir y volver a agrandar no degrada. Agrandar suaviza (no hay bloques) pero ningun programa inventa pixeles: el panel lo
+  dice ("Ampliada: se ve suavizada") y el boton "Tamano real (1:1)" regresa en un paso.
+- **Sombra "flotante" (estilo menus de Windows 11)**: negro con el contorno de la imagen, desplazado hacia abajo y desenfocado
+  (`style.OVERLAY_SHADOW_*`; las medidas son para escala 1 y se multiplican por `doc_scale`), intensidad 10-200 %. Mas esquinas
+  redondeadas (px) y borde fino gris opcionales. Todo se compone en el bitmap.
+- **LIMITE**: la sombra (y lo pegado) se RECORTA en el borde de la captura: el bitmap compuesto mide lo mismo que la captura, asi que
+  el "Margen extra" NO la deja salir. Si hace falta que la sombra de una imagen pegada al borde se vea completa, habria que componer
+  sobre un lienzo ampliado (no hecho).
+- **Seleccion**: la imagen va DEBAJO de las anotaciones: `edit.hit_test` le da la ultima prioridad (primero cualquier otra anotacion,
+  luego las imagenes, y al final el interior de un marcador). Se alinea con la barra de alinear y se borra como cualquiera.
+- **Proyecto**: `{"type":"image","path","size":[w,h],"rect",...}`; ruta ausente o tamano invalido = proyecto danado; valores
+  fuera de rango caen a los de fabrica. Si el archivo ya no existe se OMITE y se avisa una vez en la barra de estado
+  (`raster.missing_overlays`); si vuelve a aparecer se dibuja de nuevo.
+- **Trampa que costo un bug**: las paginas del panel se registran con `addWidget` en el MISMO orden que sus indices `_PAGE_*`;
+  registrar una en medio desplaza las demas y el panel muestra la pagina equivocada (los tests que solo comparan `currentIndex` no lo
+  ven). Ahora hay un test que comprueba que cada indice apunta a su pagina.
+- **Pendiente (fase 2)**: menu contextual de clic derecho sobre una anotacion (Sombra, Tamano real, Traer al frente, Enviar atras,
+  Borrar; el lienzo hoy no tiene menu), reordenar capas (hoy el orden es el de la lista y no hay forma de cambiarlo), y la fase 3
+  (nuevo lienzo en blanco para componer varias capturas; pendiente de confirmar con el usuario). La fase B de iconos (emojis como
+  stickers, que "se incrustan como imagen") puede reutilizar `ImageOverlay`.

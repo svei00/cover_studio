@@ -25,6 +25,9 @@ from core.annotate.style import (
     MAX_LINE_WIDTH,
     FOCUS_DIM,
     MAX_FOCUS_BLUR,
+    MAX_OVERLAY_CORNER,
+    MAX_SHADOW_STRENGTH,
+    MIN_SHADOW_STRENGTH,
     MAX_FOCUS_CORNER,
     MAX_FOCUS_DIM,
     MAX_NUMBER_SIZE,
@@ -66,6 +69,7 @@ from core.annotate.model import (
     Marker,
     PenMode,
     Rect,
+    ImageOverlay,
     Redaction,
     Spotlight,
     StepBadge,
@@ -130,6 +134,21 @@ def _stroke_points(value: object) -> tuple[tuple[float, float], ...]:
             raise TypeError("punto invalido")
         points.append((float(pair[0]), float(pair[1])))
     return tuple(points)
+
+
+def _overlay_path(value: object) -> str:
+    """Ruta de una imagen pegada: un texto no vacio (si el archivo ya no existe se avisa al abrir, no es un proyecto danado)."""
+    if not isinstance(value, str) or not value.strip():
+        raise TypeError("ruta de imagen ausente")
+    return value
+
+
+def _overlay_size(value: object) -> tuple[int, int]:
+    """Tamano original de una imagen pegada: dos enteros positivos razonables; si no, el proyecto esta danado."""
+    if (not isinstance(value, (list, tuple)) or len(value) != 2
+            or not all(isinstance(v, int) and not isinstance(v, bool) and 0 < v <= 100_000 for v in value)):
+        raise ValueError("tamano de imagen invalido")
+    return int(value[0]), int(value[1])
 
 
 def _number_or_default(value: object, low: float, high: float, default: float) -> float:
@@ -226,6 +245,10 @@ def item_to_dict(item: Annotation) -> dict:
                 "bg_opacity": item.bg_opacity, "border": item.border,
                 "border_width": item.border_width, "padding": item.padding, "rx": item.rx,
                 "align": item.align.value, "outline": item.outline, "opacity": item.opacity}
+    if isinstance(item, ImageOverlay):
+        return {"type": "image", "id": item.id, "path": item.path, "size": list(item.size),
+                "rect": _rect_to_list(item.rect), "opacity": item.opacity, "corner": item.corner,
+                "shadow": item.shadow, "shadow_strength": item.shadow_strength, "border": item.border}
     if isinstance(item, Spotlight):
         return {"type": "focus", "id": item.id, "rect": _rect_to_list(item.rect), "dim": item.dim,
                 "blur": item.blur, "corner": item.corner}
@@ -303,6 +326,15 @@ def item_from_dict(data: dict) -> Annotation:
                 border=data["border"], border_width=data["border_width"], padding=data["padding"],
                 rx=data["rx"], align=TextAlign(data["align"]), outline=data["outline"],
                 opacity=_number_or_default(data.get("opacity"), 0.0, 1.0, 1.0),
+            )
+        if kind == "image":
+            return ImageOverlay(
+                data["id"], _overlay_path(data["path"]), _overlay_size(data["size"]), Rect(*data["rect"]),
+                _number_or_default(data.get("opacity"), 0.05, 1.0, 1.0),
+                _number_or_default(data.get("corner"), 0.0, MAX_OVERLAY_CORNER, 0.0),
+                data.get("shadow") is True,
+                _number_or_default(data.get("shadow_strength"), MIN_SHADOW_STRENGTH, MAX_SHADOW_STRENGTH, 1.0),
+                data.get("border") is True,
             )
         if kind == "focus":
             return Spotlight(

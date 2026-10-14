@@ -25,8 +25,9 @@ from core.annotate.primitives import (
     PText,
     Primitive,
     build_primitives,
+    doc_scale,
 )
-from core.annotate.raster import apply_redactions, apply_spotlight, lens_crops, load_image
+from core.annotate.raster import apply_overlays, apply_redactions, apply_spotlight, lens_crops, load_image
 from core.geometry import escape_xml, render_png, render_png_bytes
 
 
@@ -206,7 +207,8 @@ def build_svg(doc: AnnotationDoc) -> str:
             f"La captura cambio de tamano ({image.size[0]}x{image.size[1]}, el proyecto "
             f"esperaba {doc.image_size[0]}x{doc.image_size[1]}). Reabre la captura."
         )
-    redacted = apply_redactions(image, doc.items)
+    # imagenes pegadas primero: Pixelar tambien anonimiza lo pegado y las lupas pueden ampliarlo
+    redacted = apply_redactions(apply_overlays(image, doc.items, doc_scale(doc)), doc.items)
     # las lupas se recortan de la imagen pixelada y SIN foco: el foco solo afecta al fondo
     return to_svg(doc, apply_spotlight(redacted, doc.items), build_primitives(doc), lens_crops(redacted, doc.items))
 

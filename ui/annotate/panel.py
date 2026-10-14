@@ -39,6 +39,7 @@ from core.annotate.model import (
     Icon,
     IconKind,
     IconStyle,
+    ImageOverlay,
     LensShape,
     LineStyle,
     Magnifier,
@@ -52,6 +53,7 @@ from core.annotate.model import (
     TextAlign,
     TextLabel,
 )
+from core.annotate import overlay as overlay_geometry
 from core.annotate.palette import PALETTE_LABELS
 from core.brand import brand_palette
 from core.annotate.primitives import doc_scale
@@ -72,6 +74,9 @@ from core.annotate.style import (
     CARD_FILL,
     FOCUS_DIM,
     MAX_FOCUS_BLUR,
+    MAX_OVERLAY_CORNER,
+    MAX_SHADOW_STRENGTH,
+    MIN_SHADOW_STRENGTH,
     MAX_FOCUS_CORNER,
     MAX_FOCUS_DIM,
     CREAM,
@@ -171,7 +176,7 @@ PRESET_LABELS = {
 }
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
- _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON, _PAGE_MULTI) = range(13)
+ _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON, _PAGE_MULTI, _PAGE_IMAGE) = range(14)
 
 
 RESET_TIP = "Doble clic para restablecer el valor por defecto"
@@ -263,6 +268,7 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_focus_page())
         self._pages.addWidget(self._build_icon_page())
         self._pages.addWidget(self._build_multi_page())
+        self._pages.addWidget(self._build_image_page())   # el orden DEBE coincidir con los indices _PAGE_*
 
         # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
         self._scroll = QScrollArea()
@@ -954,6 +960,50 @@ class PropertiesPanel(QWidget):
         form.addRow(note)
         return page
 
+    def _build_image_page(self) -> QWidget:
+        """Imagen pegada encima de la captura (Ctrl+Shift+V)."""
+        page = QWidget()
+        form = QFormLayout(page)
+        self._img_info = QLabel()
+        self._img_info.setWordWrap(True)
+        form.addRow(self._img_info)
+        self._img_real = QPushButton("Tamano real (1:1)")
+        self._img_real.setToolTip("Vuelve a su tamano original, que es como se ve mas nitida")
+        self._img_real.clicked.connect(self._c.reset_overlay_size)
+        form.addRow(self._img_real)
+        self._img_opacity = QSpinBox()
+        self._img_opacity.setRange(5, 100)
+        self._img_opacity.setSuffix(" %")
+        self._img_opacity.valueChanged.connect(lambda v: self._apply(opacity=v / 100))
+        self._field_row(form, "Opacidad", self._img_opacity, "opacity", 1.0)
+        self._img_corner = QDoubleSpinBox()
+        self._img_corner.setRange(0.0, MAX_OVERLAY_CORNER)
+        self._img_corner.setDecimals(0)
+        self._img_corner.setSuffix(" px")
+        self._img_corner.valueChanged.connect(lambda v: self._apply(corner=float(v)))
+        self._field_row(form, "Esquinas", self._img_corner, "corner", 0.0)
+        self._img_border = QCheckBox("Borde fino")
+        self._img_border.toggled.connect(lambda on: self._apply(border=on))
+        form.addRow(self._img_border)
+        self._img_shadow = QCheckBox("Sombra flotante")
+        self._img_shadow.setToolTip("Sombra suave hacia abajo, como la de los menus de Windows 11")
+        self._img_shadow.toggled.connect(lambda on: self._apply(shadow=on))
+        form.addRow(self._img_shadow)
+        self._img_shadow_strength = QSpinBox()
+        self._img_shadow_strength.setRange(round(MIN_SHADOW_STRENGTH * 100), round(MAX_SHADOW_STRENGTH * 100))
+        self._img_shadow_strength.setSuffix(" %")
+        self._img_shadow_strength.valueChanged.connect(lambda v: self._apply(shadow_strength=v / 100))
+        self._img_strength_row = self._field_row(form, "Intensidad", self._img_shadow_strength, "shadow_strength", 1.0)
+        self._img_form = form
+        note = QLabel(
+            "Arrastra una esquina para redimensionar sin deformarla (Mayus mientras arrastras: libre). "
+            "Al reducirla se ve nitida; al agrandarla pasa de 100 % se suaviza: ningun programa inventa los pixeles que faltan. "
+            "Pixelar, Lupa y Foco tambien actuan sobre lo pegado."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        return page
+
     def _build_focus_page(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
@@ -1286,6 +1336,22 @@ class PropertiesPanel(QWidget):
                     self._hl_opacity.setValue(round(item.opacity * 100))
                 if abs(self._hl_radius.value() - item.radius) > 1e-9:
                     self._hl_radius.setValue(item.radius)
+            elif isinstance(item, ImageOverlay):
+                self._pages.setCurrentIndex(_PAGE_IMAGE)
+                self._title.setText("Imagen pegada")
+                pct = overlay_geometry.scale_percent(item)
+                text = (f"{round(item.rect.w)} x {round(item.rect.h)} px: {pct:.0f} % de su tamano real "
+                        f"({item.size[0]} x {item.size[1]})")
+                self._img_info.setText(text + (". Ampliada: se ve suavizada." if pct > 100.5 else "."))
+                self._img_real.setEnabled(not overlay_geometry.is_real_size(item))
+                if self._img_opacity.value() != round(item.opacity * 100):
+                    self._img_opacity.setValue(round(item.opacity * 100))
+                self._set_spin(self._img_corner, item.corner)
+                self._img_border.setChecked(item.border)
+                self._img_shadow.setChecked(item.shadow)
+                if self._img_shadow_strength.value() != round(item.shadow_strength * 100):
+                    self._img_shadow_strength.setValue(round(item.shadow_strength * 100))
+                self._img_form.setRowVisible(self._img_strength_row, item.shadow)
             elif isinstance(item, Spotlight):
                 self._pages.setCurrentIndex(_PAGE_FOCUS)
                 self._title.setText("Foco")

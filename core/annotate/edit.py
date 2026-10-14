@@ -17,6 +17,7 @@ from core.annotate.model import (
     Arrow,
     Highlight,
     Icon,
+    ImageOverlay,
     Magnifier,
     Marker,
     Rect,
@@ -119,6 +120,8 @@ def hit_item(
         if r.w <= 2 * tol or r.h <= 2 * tol:
             return _contains(r.inflate(tol), p)
         return _contains(r.inflate(tol), p) and not _contains(r.inflate(-tol), p)
+    if isinstance(item, ImageOverlay):
+        return _contains(item.rect.inflate(tol / 2), p)
     if isinstance(item, Highlight):
         return _contains(item.rect.inflate(tol / 2), p)
     if isinstance(item, Stroke):
@@ -161,7 +164,11 @@ def hit_test(
     responde en su borde y su flecha (asi se puede seleccionar lo que hay DENTRO de el);
     si no hay nada mas bajo el punto, su interior tambien lo selecciona."""
     for item in reversed(items):
-        if hit_item(item, p, tol, scale, arrows):
+        if not isinstance(item, ImageOverlay) and hit_item(item, p, tol, scale, arrows):
+            return item.id
+    # las imagenes pegadas van DEBAJO de las anotaciones (se componen en el bitmap): solo cuentan si no hay otra cosa
+    for item in reversed(items):
+        if isinstance(item, ImageOverlay) and hit_item(item, p, tol, scale, arrows):
             return item.id
     for item in reversed(items):
         if isinstance(item, (Marker, Spotlight)) and _contains(item.rect.inflate(tol), p):
@@ -189,7 +196,7 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
         if arrow is not None:
             handles[Handle.START], handles[Handle.END] = arrow
         return handles
-    if isinstance(item, (Redaction, Highlight, Spotlight)):
+    if isinstance(item, (Redaction, Highlight, Spotlight, ImageOverlay)):
         return rect_handles(item.rect)
     if isinstance(item, Stroke):
         return rect_handles(_stroke_box(item)) if item.points else {}
@@ -229,7 +236,7 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
     """Caja que se dibuja alrededor de la anotacion seleccionada."""
     if isinstance(item, Stroke):
         return _stroke_box(item).inflate(item.width * scale / 2) if item.points else Rect(0, 0, 0, 0)
-    if isinstance(item, (Marker, Redaction, Highlight, Spotlight)):
+    if isinstance(item, (Marker, Redaction, Highlight, Spotlight, ImageOverlay)):
         return item.rect
     if isinstance(item, Arrow):
         x0, x1 = sorted((item.start[0], item.end[0]))
@@ -307,7 +314,7 @@ def move_item(
                 arrow_tip=(item.arrow_tip[0] + dx, item.arrow_tip[1] + dy),
             )
         return moved
-    if isinstance(item, (Redaction, Highlight, Spotlight)):
+    if isinstance(item, (Redaction, Highlight, Spotlight, ImageOverlay)):
         r = item.rect
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
     if isinstance(item, Stroke):
@@ -326,7 +333,7 @@ def move_item(
 
 
 def resize_item(
-    item: Annotation, handle: Handle, p: Point, min_size: float = 4.0, arrows: Arrows | None = None
+    item: Annotation, handle: Handle, p: Point, min_size: float = 4.0, arrows: Arrows | None = None, free: bool = False
 ) -> Annotation:
     """Mueve el asa al punto. Los rectangulos nunca bajan de min_size; si se
     arrastra el asa mas alla del lado opuesto, se queda en min_size. En un marcador, START y
@@ -351,9 +358,47 @@ def resize_item(
         return item
     if isinstance(item, Magnifier):
         return _resize_lens(item, handle, p, min_size)
+    if isinstance(item, ImageOverlay):
+        return _resize_overlay(item, handle, p, max(min_size, style.MIN_OVERLAY_SIZE), free)
     if not isinstance(item, (Marker, Redaction, Highlight, Spotlight)):
         return item
     return replace(item, rect=resize_rect(item.rect, handle, p, min_size))
+
+
+def _resize_overlay(item: ImageOverlay, handle: Handle, p: Point, min_size: float, free: bool) -> ImageOverlay:
+    """Una imagen pegada conserva la PROPORCION de su original (que no se deforme); con `free` (Mayus mientras se arrastra)
+    se estira como cualquier rectangulo. Una esquina deja fija la opuesta; un lado, el lado contrario, y la otra medida
+    sigue la proporcion alrededor de su centro."""
+    if free or item.size[0] <= 0 or item.size[1] <= 0:
+        return replace(item, rect=resize_rect(item.rect, handle, p, min_size))
+    ratio = item.size[0] / item.size[1]
+    r = item.rect
+    min_w = max(min_size, min_size * ratio)
+    min_h = max(min_size, min_size / ratio)
+    if handle in (Handle.NW, Handle.NE, Handle.SE, Handle.SW):
+        ax = r.right if handle in _WEST else r.x
+        ay = r.bottom if handle in _NORTH else r.y
+        w = (ax - p[0]) if handle in _WEST else (p[0] - ax)
+        h = (ay - p[1]) if handle in _NORTH else (p[1] - ay)
+        w = max(w, h * ratio, min_w)
+        h = w / ratio
+        x = ax - w if handle in _WEST else ax
+        y = ay - h if handle in _NORTH else ay
+    elif handle in (Handle.E, Handle.W):
+        ax = r.right if handle is Handle.W else r.x
+        w = max(min_w, (ax - p[0]) if handle is Handle.W else (p[0] - ax))
+        h = w / ratio
+        x = ax - w if handle is Handle.W else ax
+        y = r.center[1] - h / 2
+    elif handle in (Handle.N, Handle.S):
+        ay = r.bottom if handle is Handle.N else r.y
+        h = max(min_h, (ay - p[1]) if handle is Handle.N else (p[1] - ay))
+        w = h * ratio
+        x = r.center[0] - w / 2
+        y = ay - h if handle is Handle.N else ay
+    else:
+        return item
+    return replace(item, rect=Rect(x, y, w, h))
 
 
 def _resize_stroke(s: Stroke, handle: Handle, p: Point, min_size: float) -> Stroke:

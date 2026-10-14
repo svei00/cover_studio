@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 from enum import Enum
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
@@ -19,6 +20,7 @@ from PySide6.QtGui import QUndoCommand, QUndoStack
 from core.annotate import align as aligning
 from core.annotate import crop as cropping
 from core.annotate import freehand
+from core.annotate import overlay as overlay_geometry
 from core.annotate import edit, lens
 from core.annotate.model import (
     Annotation,
@@ -27,6 +29,7 @@ from core.annotate.model import (
     ArrowSide,
     Highlight,
     HeadStyle,
+    ImageOverlay,
     Magnifier,
     Marker,
     PenMode,
@@ -245,6 +248,7 @@ class EditController(QObject):
         self.icon_kind = IconKind.WARNING       # el icono que coloca la herramienta Icono (Check y Cruz tienen la suya)
         self.icon_style = IconStyle.SEAL        # el estilo con que se colocan los iconos nuevos (el ultimo que se eligio)
         self._press_arrows: dict[str, tuple[Point, Point]] = {}   # flechas de los marcadores al empezar el gesto
+        self.free_resize = False   # Mayus mientras se arrastra un asa: la imagen pegada se estira sin conservar la proporcion
         self._stroke_raw: list[Point] = []   # puntos crudos del mouse del trazo a mano alzada en curso
 
     # ------------------------------------------------------------------
@@ -558,6 +562,24 @@ class EditController(QObject):
         self._mode, self._orig, self._anchor = "create", item, p
         self.select(item_id)
 
+    def add_overlay(self, path: Path, size: tuple[int, int]) -> str | None:
+        """Pega una imagen encima de la captura: a su tamano real y centrada en la parte visible (si no cabe, reducida).
+        Un solo paso de deshacer; queda seleccionada y se vuelve a Seleccionar para poder moverla de inmediato."""
+        if self.doc is None:
+            return None
+        item = ImageOverlay(
+            edit.new_id(self.doc.items), str(path), size, overlay_geometry.initial_rect(size, self.doc.view))
+        self.stack.push(_AddCommand(self, item))
+        self.set_tool(Tool.SELECT)
+        self.select(item.id)
+        return item.id
+
+    def reset_overlay_size(self) -> None:
+        """La imagen pegada seleccionada vuelve a su tamano real (1:1), con el mismo centro."""
+        item = self.selected_item()
+        if isinstance(item, ImageOverlay):
+            self.edit_selected(_merge=False, rect=overlay_geometry.real_size_rect(item))
+
     def _commit_spotlight(self, new: Spotlight) -> None:
         """Solo hay un foco por documento: el nuevo reemplaza al anterior, y todo es UN paso de deshacer."""
         assert self.doc is not None
@@ -609,7 +631,8 @@ class EditController(QObject):
             self._set_item(edit.move_item(
                 self._orig, p[0] - self._grab[0], p[1] - self._grab[1], self._part, self._press_arrows))
         elif self._mode == "resize" and self._handle is not None:
-            self._set_item(edit.resize_item(self._orig, self._handle, p, arrows=self._press_arrows))
+            self._set_item(edit.resize_item(
+                self._orig, self._handle, p, arrows=self._press_arrows, free=self.free_resize))
         elif self._mode == "create":
             if isinstance(self._orig, Stroke):
                 # a mano alzada: se acumulan los puntos del mouse (con una separacion minima) y se ve en vivo

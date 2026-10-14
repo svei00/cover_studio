@@ -393,6 +393,7 @@ class AnnotateCanvas(QWidget):
             return
         point = self.view_to_image(event.position())
         if event.buttons() & Qt.LeftButton:
+            self._controller.free_resize = bool(event.modifiers() & Qt.ShiftModifier)   # imagen pegada: estirar libre
             self._controller.move(point)
         else:
             self.setCursor(self._controller.cursor_at(point, self._tolerance()))
