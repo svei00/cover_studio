@@ -71,8 +71,9 @@ def test_el_check_se_coloca_con_un_clic_y_sigue_activo_para_el_siguiente(tab):
     _click(tab.canvas, (100.0, 100.0))
     _click(tab.canvas, (300.0, 100.0))
     check, otro = _icons(tab)
-    assert (check.kind, check.style, check.center) == (IconKind.CHECK, IconStyle.SEAL, (100.0, 100.0))
-    assert otro.center == (300.0, 100.0) and otro.id != check.id and tab.controller.tool is Tool.CHECK
+    assert (check.kind, check.style) == (IconKind.CHECK, IconStyle.SEAL)
+    assert check.center == pytest.approx((100.0, 100.0)) and otro.center == pytest.approx((300.0, 100.0))   # pantalla -> imagen: flotantes
+    assert otro.id != check.id and tab.controller.tool is Tool.CHECK
     assert tab.controller.selected_id == otro.id
     tab.controller.undo()
     assert len(_icons(tab)) == 1                                       # un clic = un paso de deshacer

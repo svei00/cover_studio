@@ -12,10 +12,11 @@ FIT_RATIO = 0.9   # una imagen que no cabe se reduce para ocupar, como mucho, es
 
 
 def initial_rect(size: tuple[int, int], view: Rect, fit: float = FIT_RATIO) -> Rect:
-    """Donde y con que tamano entra una imagen recien pegada: a tamano real y centrada en `view`; si es mas grande que
-    `fit` de la zona visible, se reduce (proporcional) hasta que quepa. Origen en pixeles enteros (1:1 sin remuestreo)."""
+    """Donde y con que tamano entra una imagen recien pegada: a tamano real y centrada en `view`. Si cabe ENTERA (aunque sea justo,
+    como una imagen del mismo tamano que el lienzo) se queda al 100 %; solo si es mas grande que la zona visible se reduce
+    (proporcional) hasta ocupar `fit` de ella, para que se vean sus asas. Origen en pixeles enteros (1:1 sin remuestreo)."""
     width, height = float(size[0]), float(size[1])
-    ratio = min(1.0, fit * view.w / width, fit * view.h / height)
+    ratio = 1.0 if width <= view.w and height <= view.h else min(fit * view.w / width, fit * view.h / height)
     w, h = max(1, round(width * ratio)), max(1, round(height * ratio))
     cx, cy = view.center
     return Rect(round(cx - w / 2), round(cy - h / 2), w, h)

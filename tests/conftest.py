@@ -20,6 +20,8 @@ def _sin_dialogos_modales(monkeypatch):
     # lo mismo con el menu de clic derecho del lienzo: un QMenu.exec real es modal y cuelga la prueba
     from ui.annotate.canvas import AnnotateCanvas
     monkeypatch.setattr(AnnotateCanvas, "_exec_menu", lambda self, menu, global_pos: None)
+    # y con el dialogo del lienzo en blanco (modal): por defecto se cancela
+    monkeypatch.setattr(AnnotateTab, "_ask_blank_canvas", lambda self: None)
 
 
 @pytest.fixture(autouse=True)

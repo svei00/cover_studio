@@ -749,8 +749,8 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   pixelado -> recortes de lupa -> foco -> anotaciones. Asi Pixelar tambien anonimiza lo pegado, la lupa puede ampliarlo y el foco lo
   oscurece; las flechas y recuadros quedan siempre encima. Lo usan `svg.build_svg` y `AnnotateTab.refresh` (la clave de cache incluye
   las imagenes y la escala, que mueve la sombra).
-- **Tamano**: entra a tamano REAL (1:1, sin remuestrear), centrada en la parte visible (`overlay.initial_rect`); solo si no cabe se
-  reduce (90 %). Redimensionar CONSERVA la proporcion del original (`edit._resize_overlay`; Mayus mientras se arrastra = libre, via
+- **Tamano**: entra a tamano REAL (1:1, sin remuestrear), centrada en la parte visible (`overlay.initial_rect`); si cabe ENTERA
+  (incluso justo, como una imagen del tamano del lienzo) se queda al 100 %, y solo si es mas grande que la zona visible se reduce al 90 %. Redimensionar CONSERVA la proporcion del original (`edit._resize_overlay`; Mayus mientras se arrastra = libre, via
   `controller.free_resize` que pone el lienzo en cada `mouseMove`; Mayus al PRESIONAR suma a la seleccion). Siempre se remuestrea
   desde el ORIGINAL con LANCZOS (`raster._overlay_picture`, con cache por archivo+mtime+tamano), nunca desde una copia ya reducida:
   agrandar, reducir y volver a agrandar no degrada. Agrandar suaviza (no hay bloques) pero ningun programa inventa pixeles: el panel lo
@@ -791,3 +791,21 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - La pagina de propiedades de la imagen pegada tiene tambien los botones "Al frente" / "Atras".
 - No hecho: atajos de teclado para el orden (Photoshop usa Ctrl+] y Ctrl+[), y un menu al hacer clic derecho en un hueco (p. ej. "Pegar
   encima").
+
+### Lienzo en blanco (fase 3 de Pegar encima)
+
+- **Uso**: boton "Lienzo en blanco" (fila de herramientas, siempre activo): un dialogo pide tamano y color de fondo y crea una captura
+  base LISA. No es un tipo nuevo de documento: es un PNG normal en `Imagenes/Cover Studio/lienzo-<fecha>.png` que se abre como cualquier
+  captura (anotar, Pegar encima, exportar, guardar proyecto: todo igual). Con una imagen en el portapapeles, el dialogo arranca en "Como
+  la imagen del portapapeles" y, como una imagen que cabe justo se queda al 100 %, pegarla despues la deja exactamente encajada.
+- `core/annotate/blank.py` (puro): `validate_size` (enteros, de 64 a 8000 px por lado, tope de 36 MP), `create_blank(size, color, folder)`
+  (escribe a un temporal y renombra; un tamano o color invalido no deja archivos), `unique_png_path(folder, prefix)` (nombres
+  `-2`, `-3`... si caen en el mismo segundo: el proyecto REFERENCIA el archivo; lo comparten el lienzo y Pegar encima), `PRESETS`.
+- `ui/annotate/blank_dialog.py`: preajustes (1920x1080, 1280x720, 1080x1080, 1080x1350), el del portapapeles (solo si su tamano es
+  valido) y Personalizado (tocar ancho o alto a mano pasa solo a Personalizado); "Crear" se desactiva si pasa del tope y lo explica.
+- `AnnotateTab.create_blank_canvas(size, color)`: crea el archivo y llama a `load_capture` (que pregunta por cambios sin guardar); si
+  se cancela, BORRA el archivo recien creado (sin lienzos huerfanos). `_ask_blank_canvas` es el punto de sustitucion del dialogo
+  modal: `tests/conftest.py` lo cancela por defecto.
+- No hecho: fondo transparente (el PNG base es opaco), poder cambiar el tamano o el color de un lienzo ya creado (se crea otro) y un
+  atajo de teclado (Ctrl+N es de "Nueva portada").
+

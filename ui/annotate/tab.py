@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import shutil
 import time
-from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.annotate import blank
 from core.annotate.bounds import required_padding
 from core.brand import brand_palette
 from core.annotate.errors import AnnotateError
@@ -46,6 +46,7 @@ from core.annotate.raster import (
 from core.annotate.upscale import FACTORS, save_upscaled, scaled_output_path
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES, GeometryError
+from ui.annotate.blank_dialog import BlankCanvasDialog
 from ui.annotate.canvas import ZOOM_BUTTON_STEP, AnnotateCanvas
 from ui.annotate.controller import STICKY_TOOLS, EditController, Tool
 from ui.annotate.icon_pixmap import ICON_LABELS, icon_for
@@ -170,6 +171,14 @@ class AnnotateTab(QWidget):
             self.tool_buttons[tool] = button
             tools.addWidget(button)
         self.tool_buttons[Tool.SELECT].setChecked(True)
+        self.blank_btn = QToolButton()
+        self.blank_btn.setText("Lienzo en blanco")
+        self.blank_btn.setToolTip(
+            "Crea una captura base lisa (tamano y color a elegir) para componer varias imagenes con Pegar encima "
+            "(CTRL + MAYUS + V)"
+        )
+        self.blank_btn.clicked.connect(self.new_blank_canvas)
+        tools.addWidget(self.blank_btn)
         self.paste_over_btn = QToolButton()
         self.paste_over_btn.setText("Pegar encima")
         self.paste_over_btn.setToolTip(
@@ -409,17 +418,12 @@ class AnnotateTab(QWidget):
             image = clipboard.image()
             if not image.isNull():
                 folder = captures_dir()
-                stamp = f"{prefix}-{datetime.now():%Y%m%d-%H%M%S}"
                 try:
                     folder.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:
                     QMessageBox.critical(self, f"No se pudo guardar {what}", str(exc))
                     return None, "error"
-                path = folder / f"{stamp}.png"
-                n = 2
-                while path.exists():   # dos pegados en el mismo segundo no se pisan (el proyecto referencia el archivo)
-                    path = folder / f"{stamp}-{n}.png"
-                    n += 1
+                path = blank.unique_png_path(folder, prefix)   # dos pegados en el mismo segundo no se pisan
                 if not image.save(str(path), "PNG"):
                     QMessageBox.critical(self, f"No se pudo guardar {what}", str(path))
                     return None, "error"
@@ -436,6 +440,44 @@ class AnnotateTab(QWidget):
                 self.statusMessage.emit(f"Captura pegada y guardada en {path}")
         elif how == "none":
             self.statusMessage.emit("No hay una imagen en el portapapeles.")
+
+    def _clipboard_image_size(self) -> tuple[int, int] | None:
+        """(ancho, alto) de la imagen del portapapeles, si hay una (o un archivo de imagen copiado no cuenta: solo imagen)."""
+        mime = QGuiApplication.clipboard().mimeData()
+        if mime is None or not mime.hasImage():
+            return None
+        image = QGuiApplication.clipboard().image()
+        return None if image.isNull() else (image.width(), image.height())
+
+    def _ask_blank_canvas(self) -> tuple[tuple[int, int], str] | None:
+        """Pregunta tamano y color del lienzo en blanco: ((ancho, alto), '#RRGGBB'), o None si se cancela."""
+        dialog = BlankCanvasDialog(self._clipboard_image_size(), self)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return dialog.size_px(), dialog.color()
+
+    def new_blank_canvas(self) -> None:
+        """Boton 'Lienzo en blanco': pregunta y crea una captura base lisa."""
+        choice = self._ask_blank_canvas()
+        if choice is not None:
+            self.create_blank_canvas(*choice)
+
+    def create_blank_canvas(self, size: tuple[int, int], color: str) -> bool:
+        """Crea el PNG liso en Imagenes/Cover Studio y lo abre como captura (pregunta antes si hay cambios sin guardar; si se
+        cancela, el archivo creado se borra). True si quedo abierto."""
+        try:
+            path = blank.create_blank(size, color, captures_dir())
+        except AnnotateError as exc:
+            QMessageBox.critical(self, "No se pudo crear el lienzo", str(exc))
+            return False
+        self.load_capture(path)
+        if self.doc is None or self.doc.image_path != path:
+            path.unlink(missing_ok=True)   # se cancelo (o no se pudo abrir): no deja un lienzo huerfano
+            return False
+        self.statusMessage.emit(
+            f"Lienzo en blanco de {size[0]} x {size[1]} px. Pega imagenes encima con CTRL + MAYUS + V."
+        )
+        return True
 
     def paste_overlay(self) -> None:
         """CTRL + MAYUS + V: pega la imagen del portapapeles ENCIMA de la captura abierta (a su tamano real, centrada) como

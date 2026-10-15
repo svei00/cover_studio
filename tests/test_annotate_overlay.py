@@ -264,6 +264,15 @@ def test_una_imagen_grande_se_reduce_conservando_la_proporcion():
     assert r.w / r.h == pytest.approx(2.0, abs=0.01) and r.center == pytest.approx((400, 300), abs=1)
 
 
+def test_una_imagen_que_cabe_justo_o_casi_se_queda_al_100_por_ciento():
+    exact = overlay.initial_rect((640, 360), Rect(0, 0, 640, 360))
+    assert exact == Rect(0, 0, 640, 360)                                            # del tamano del lienzo: sin reducirla
+    almost = overlay.initial_rect((790, 500), Rect(0, 0, 800, 500))
+    assert (almost.w, almost.h) == (790, 500)
+    over = overlay.initial_rect((801, 500), Rect(0, 0, 800, 500))
+    assert over.w < 801 and over.w / over.h == pytest.approx(801 / 500, abs=0.01)     # no cabe: se reduce
+
+
 def test_se_centra_en_la_parte_visible_si_hay_recorte():
     r = overlay.initial_rect((100, 50), Rect(300, 200, 400, 300))
     assert r.center == pytest.approx((500, 350), abs=1)
