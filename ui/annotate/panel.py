@@ -672,7 +672,7 @@ class PropertiesPanel(QWidget):
         replace_btn.clicked.connect(self._c.auto_place_selected_lens)
         self._field_row(form, "Zoom", self._lens_zoom, "zoom", 2.0)
         form.addRow(self._lens_warning)
-        self._field_row(form, "Forma", self._lens_shape, "shape", LensShape.CIRCLE)
+        self._field_row(form, "Forma", self._lens_shape, "shape", LensShape.ROUNDED)
         self._lens_corner = QSpinBox()
         self._lens_corner.setRange(0, 50)
         self._lens_corner.setSuffix(" %")

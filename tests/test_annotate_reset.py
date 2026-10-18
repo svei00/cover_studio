@@ -117,7 +117,10 @@ def test_restablecer_la_forma_y_el_grosor(tab):
     label, button = _lens_row(tab, tab.panel._lens_shape)
     assert button.isEnabled()
     button.click()
-    assert tab.controller.selected_item().shape is LensShape.CIRCLE
+    assert tab.controller.selected_item().shape is LensShape.ROUNDED          # la forma de fabrica es la rectangular
+    assert not button.isEnabled()
+    tab.panel._lens_shape.setCurrentIndex(tab.panel._lens_shape.findData(LensShape.CIRCLE.value))
+    assert button.isEnabled()                                                  # y la circular ya no lo es
 
 
 # --- otros tipos ----------------------------------------------------------

@@ -108,7 +108,7 @@ def test_crear_una_lupa_arrastrando_coloca_el_lente_sin_cubrir_el_origen(ctl):
     ctl.set_tool(Tool.LENS)
     drag(ctl, (100.0, 100.0), (180.0, 150.0))
     item = ctl.doc.items[0]
-    assert isinstance(item, Magnifier) and item.zoom == 2.0 and item.shape is LensShape.CIRCLE
+    assert isinstance(item, Magnifier) and item.zoom == 2.0 and item.shape is LensShape.ROUNDED   # rectangular por defecto
     assert not lens.lens_rect(item).intersects(lens.effective_source(item))
     box = lens.lens_rect(item)
     assert box.x >= 0 and box.y >= 0 and box.right <= 1000 and box.bottom <= 700

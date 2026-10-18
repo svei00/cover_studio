@@ -575,3 +575,8 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   `brand.json`, con nombre de la marca y colores con nombre) que alimente los defaults de las dos pestanas, el boton
   "Restaurar colores de marca" y el degradado del subtitulo. La infraestructura de datos de usuario de
   `core/user_settings.py` ya sirve de base.
+
+### Lupa: rectangular por defecto
+
+- `Magnifier.shape` por defecto es `LensShape.ROUNDED` (rectangular; era circular) y el restablecer de "Forma" del
+  panel vuelve a ella. Solo cambia la lupa NUEVA: los proyectos guardados traen su forma explicita y abren igual.

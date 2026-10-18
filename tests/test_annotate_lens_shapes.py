@@ -283,10 +283,19 @@ def test_el_panel_ofrece_las_tres_formas(tab):
     assert [combo.itemText(i) for i in range(combo.count())] == ["Circular", "Ovalada", "Rectangular"]
 
 
-def test_pasar_a_ovalada_conserva_las_proporciones_que_se_arrastraron(tab):
+def test_la_lupa_nueva_es_rectangular_por_defecto(tab):
     inicial = draw_lens(tab)
-    assert inicial.shape is LensShape.CIRCLE and effective_source(inicial).w == effective_source(inicial).h
+    assert inicial.shape is LensShape.ROUNDED
+    src = effective_source(inicial)
+    assert (src.w, src.h) == pytest.approx((100, 60), abs=1)   # sin cuadrar: es lo arrastrado
+
+
+def test_pasar_de_circular_a_ovalada_conserva_las_proporciones_que_se_arrastraron(tab):
+    draw_lens(tab)
     combo = tab.panel._lens_shape
+    combo.setCurrentIndex(combo.findData(LensShape.CIRCLE.value))      # el circulo cuadra el origen...
+    circular = tab.doc.items[0]
+    assert effective_source(circular).w == effective_source(circular).h
     combo.setCurrentIndex(combo.findData(LensShape.ELLIPSE.value))
     item = tab.doc.items[0]
     assert item.shape is LensShape.ELLIPSE
@@ -298,6 +307,8 @@ def test_el_control_de_esquinas_solo_aparece_en_la_forma_rectangular(tab):
     draw_lens(tab)
     p = tab.panel
     visible = lambda: p._lens_form.isRowVisible(p._lens_corner_row)  # noqa: E731
+    assert visible()                                              # rectangular: la de fabrica
+    p._lens_shape.setCurrentIndex(p._lens_shape.findData(LensShape.CIRCLE.value))
     assert not visible()                                          # circular
     p._lens_shape.setCurrentIndex(p._lens_shape.findData(LensShape.ELLIPSE.value))
     assert not visible()                                          # ovalada

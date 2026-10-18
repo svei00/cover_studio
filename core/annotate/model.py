@@ -198,7 +198,7 @@ class Magnifier:
     source: Rect
     lens_center: tuple[float, float]
     zoom: float = 2.0
-    shape: LensShape = LensShape.CIRCLE
+    shape: LensShape = LensShape.ROUNDED   # rectangular por defecto (la que mas se usa)
     connector: bool = True
     frame_color: str | None = None
     corner: float = DEFAULT_LENS_CORNER   # solo ROUNDED: 0 = esquinas rectas, 0.5 = muy redondeadas
