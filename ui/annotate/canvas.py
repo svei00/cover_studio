@@ -49,6 +49,7 @@ class AnnotateCanvas(QWidget):
         self._primitives: list[Primitive] = []
         self._lens_images: Mapping[str, QImage] = {}
         self._padding = 0
+        self._frame_image: QImage | None = None
         self._crop: Rect | None = None
         self._controller: EditController | None = None
         # zoom manual: None = "Ajustar". `_center` es el punto de la imagen que queda en el centro
@@ -73,9 +74,11 @@ class AnnotateCanvas(QWidget):
         lens_images: Mapping[str, QImage] | None = None,
         padding: int = 0,
         crop: Rect | None = None,
+        frame: QImage | None = None,
     ) -> None:
         self._image = image
         self._crop = crop
+        self._frame_image = frame   # el margen extra con lo pegado que se sale de la captura (None = relleno liso)
         self._primitives = list(primitives)
         self._lens_images = lens_images or {}
         self._padding = max(0, padding)
@@ -266,7 +269,9 @@ class AnnotateCanvas(QWidget):
         total_h = fh + 2 * pad
         # solo se ve lo que se exportaria: lo que se sale de la region mostrada mas su margen se recorta
         painter.setClipRect(QRectF(0, 0, total_w, total_h))
-        if pad:
+        if pad and self._frame_image is not None and not self._frame_image.isNull():
+            painter.drawImage(0, 0, self._frame_image)   # lo mismo que se exporta: imagenes y sombras que se salen, en el margen
+        elif pad:
             painter.fillRect(QRectF(0, 0, total_w, total_h), QColor(CARD_FILL))
         painter.translate(pad - fx, pad - fy)
         painter.save()

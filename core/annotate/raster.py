@@ -7,11 +7,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFilter, ImageOps, UnidentifiedImageError
 
 from core.annotate.errors import AnnotateError
 from core.annotate import lens, style
-from core.annotate.model import Annotation, ImageOverlay, Magnifier, Redaction, Spotlight
+from core.annotate import overlay as overlay_geometry
+from core.annotate.model import Annotation, ImageOverlay, Magnifier, Rect, Redaction, Spotlight
 from core.geometry import SUPPORTED_PHOTO_SUFFIXES
 
 
@@ -102,7 +103,7 @@ def _shadow_layer(size: tuple[int, int], mask: Image.Image, opacity: float, stre
     """(capa RGBA de la sombra, margen): negro con el contorno de la imagen, desplazado hacia abajo y desenfocado."""
     sigma = style.OVERLAY_SHADOW_BLUR * scale
     dy = round(style.OVERLAY_SHADOW_DY * scale)
-    margin = int(3 * sigma) + abs(dy) + 2
+    margin = overlay_geometry.shadow_margin(scale)
     alpha = Image.new("L", (size[0] + 2 * margin, size[1] + 2 * margin), 0)
     alpha.paste(mask, (margin, margin + dy))
     alpha = alpha.filter(ImageFilter.GaussianBlur(sigma))
@@ -113,10 +114,13 @@ def _shadow_layer(size: tuple[int, int], mask: Image.Image, opacity: float, stre
     return layer, margin
 
 
-def apply_overlays(img: Image.Image, items: Sequence[Annotation], scale: float = 1.0) -> Image.Image:
+def apply_overlays(
+    img: Image.Image, items: Sequence[Annotation], scale: float = 1.0, offset: tuple[int, int] = (0, 0)
+) -> Image.Image:
     """Copia de `img` con cada ImageOverlay compuesta (en el orden de la lista: la ultima queda encima). Sin imagenes
-    pegadas devuelve la misma. Lo que se sale de la captura se recorta; un archivo que ya no existe se omite (usa
-    `missing_overlays` para avisarlo)."""
+    pegadas devuelve la misma. Lo que se sale de `img` se recorta; un archivo que ya no existe se omite (usa
+    `missing_overlays` para avisarlo). `offset` traslada las imagenes (para componer sobre un lienzo que no empieza en el
+    origen de la captura: ver `overlay_frame`)."""
     overlays = [i for i in items if isinstance(i, ImageOverlay)]
     if not overlays:
         return img
@@ -125,7 +129,7 @@ def apply_overlays(img: Image.Image, items: Sequence[Annotation], scale: float =
         source = _overlay_source(ov.path)
         if source is None:
             continue
-        x0, y0 = int(round(ov.rect.x)), int(round(ov.rect.y))
+        x0, y0 = int(round(ov.rect.x)) + offset[0], int(round(ov.rect.y)) + offset[1]
         size = (max(1, int(round(ov.rect.w))), max(1, int(round(ov.rect.h))))
         picture = _overlay_picture(ov.path, source, size)
         mask = _rounded_mask(size, ov.corner)
@@ -147,6 +151,26 @@ def apply_overlays(img: Image.Image, items: Sequence[Annotation], scale: float =
             )
             _alpha_paste(out, edge, x0, y0)
     return out
+
+
+def overlay_frame(items: Sequence[Annotation], view: Rect, padding: int, scale: float) -> Image.Image | None:
+    """La imagen del MARGEN EXTRA (`padding` px alrededor de `view`, la parte que se exporta) con las imagenes pegadas y sus
+    sombras que se salen de la captura: el relleno de la tarjeta con todo compuesto encima. Es del tamano del lienzo exportado
+    (`view` mas el margen a cada lado) y se dibuja en lugar del relleno liso; en el centro lo tapa la captura. None si no hay
+    margen o nada se sale de `view` (entonces el relleno liso es lo correcto y el SVG queda como siempre)."""
+    if padding <= 0:
+        return None
+    overlays = [i for i in items if isinstance(i, ImageOverlay)]
+    if not any(_leaves_view(ov, view, scale) for ov in overlays):
+        return None
+    width, height = int(view.w) + 2 * padding, int(view.h) + 2 * padding
+    canvas = Image.new("RGBA", (width, height), ImageColor.getrgb(style.CARD_FILL) + (255,))
+    return apply_overlays(canvas, overlays, scale, (padding - int(view.x), padding - int(view.y)))
+
+
+def _leaves_view(ov: ImageOverlay, view: Rect, scale: float) -> bool:
+    box = overlay_geometry.drawn_extent(ov, scale)
+    return box.x < view.x or box.y < view.y or box.right > view.right or box.bottom > view.bottom
 
 
 def apply_redactions(img: Image.Image, items: Sequence[Annotation]) -> Image.Image:

@@ -7,7 +7,8 @@ import math
 from collections.abc import Iterable
 
 from core.annotate import freehand
-from core.annotate.model import Annotation, AnnotationDoc, Rect, TextLabel
+from core.annotate import overlay as overlay_geometry
+from core.annotate.model import Annotation, AnnotationDoc, ImageOverlay, Rect, TextLabel
 from core.annotate.primitives import (
     PCircle,
     PEllipse,
@@ -63,6 +64,8 @@ def union_bounds(boxes: Iterable[Rect]) -> Rect | None:
 def item_box(doc: AnnotationDoc, item: Annotation, scale: float) -> Rect | None:
     """Caja que ocupa lo dibujado de UNA anotacion (resplandor y etiquetas incluidos);
     None si no dibuja nada (el pixelado vive en el bitmap)."""
+    if isinstance(item, ImageOverlay):
+        return overlay_geometry.drawn_extent(item, scale)   # va en el bitmap, no en primitivas; con sombra incluye lo que se ve de ella
     boxes = [b for p in item_primitives(doc, item, scale) if (b := primitive_bounds(p)) is not None]
     if isinstance(item, TextLabel):
         boxes.append(label_box(item, scale))

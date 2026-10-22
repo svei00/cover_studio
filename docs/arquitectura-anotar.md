@@ -783,9 +783,8 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - **Sombra "flotante" (estilo menus de Windows 11)**: negro con el contorno de la imagen, desplazado hacia abajo y desenfocado
   (`style.OVERLAY_SHADOW_*`; las medidas son para escala 1 y se multiplican por `doc_scale`), intensidad 10-200 %. Mas esquinas
   redondeadas (px) y borde fino gris opcionales. Todo se compone en el bitmap.
-- **LIMITE**: la sombra (y lo pegado) se RECORTA en el borde de la captura: el bitmap compuesto mide lo mismo que la captura, asi que
-  el "Margen extra" NO la deja salir. Si hace falta que la sombra de una imagen pegada al borde se vea completa, habria que componer
-  sobre un lienzo ampliado (no hecho).
+- **Sombra e imagenes que se salen de la captura**: el bitmap compuesto mide lo mismo que la captura, asi que lo que cuelga se recorta
+  en su borde... salvo en el MARGEN EXTRA: ver "Pegar encima: marco del margen extra" mas abajo.
 - **Seleccion**: la imagen va DEBAJO de las anotaciones: `edit.hit_test` le da la ultima prioridad (primero cualquier otra anotacion,
   luego las imagenes, y al final el interior de un marcador). Se alinea con la barra de alinear y se borra como cualquiera.
 - **Proyecto**: `{"type":"image","path","size":[w,h],"rect",...}`; ruta ausente o tamano invalido = proyecto danado; valores
@@ -833,4 +832,26 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   modal: `tests/conftest.py` lo cancela por defecto.
 - No hecho: fondo transparente (el PNG base es opaco), poder cambiar el tamano o el color de un lienzo ya creado (se crea otro) y un
   atajo de teclado (Ctrl+N es de "Nueva portada").
+
+### Pegar encima: marco del margen extra (la sombra ya no se recorta en el borde)
+
+- **Problema**: la sombra (y lo que cuelga) de una imagen pegada junto al borde se cortaba en el borde de la captura, y el "Margen extra"
+  solo era un relleno liso (`CARD_FILL`) que no la dejaba salir.
+- **Solucion**: `raster.overlay_frame(items, view, padding, scale)` arma el MARCO: una imagen del tamano del lienzo exportado (`view` mas
+  el margen a cada lado), rellena con el color de la tarjeta y con las imagenes pegadas (y sus sombras) compuestas encima, con
+  `apply_overlays(..., offset=(padding - view.x, padding - view.y))`. `svg.to_svg(..., frame=)` la dibuja EN LUGAR del `<rect>` liso y la
+  captura tapa el centro; el lienzo (`AnnotateCanvas.set_content(..., frame=)`) pinta la misma imagen, asi que pantalla y exportacion
+  coinciden. `AnnotateTab._refresh_frame` la rehace solo si cambian las imagenes, el margen, la zona exportada o la escala.
+- **Solo existe cuando hace falta**: sin margen, sin imagenes, o con todo (sombra incluida) dentro de la zona exportada devuelve `None` y el
+  SVG queda exactamente como siempre (un solo `<image>` y el `<rect>`). Con recorte, el marco rodea la zona recortada: lo que queda dentro de
+  la captura pero fuera del recorte tambien se ve en el margen.
+- **Dos medidas de sombra** (`core/annotate/overlay.py`, una sola fuente de verdad que usan raster y bounds): `shadow_margin(scale)` = lo que
+  mide la CAPA que se compone (3 desviaciones + lo que cae), y `shadow_reach(scale)` = hasta donde se VE (2 desviaciones + lo que cae; en ese
+  punto la sombra vale ~1 nivel de 255). `drawn_extent(item, scale)` = la caja que se ve (con sombra, inflada por `shadow_reach`).
+- **"Cuanto margen hace falta"**: `bounds.item_box` ya devuelve `drawn_extent` para las `ImageOverlay`, asi que `required_padding` (el aviso
+  "algo se recorta, agrega N px") cuenta lo que cuelga y la sombra visible, y `items_outside_view` avisa de una imagen fuera del recorte.
+- **Sin margen todo sigue igual**: lo que cuelga se recorta en el borde de la captura (decision consciente: es como se "recorta" una imagen
+  pegada arrastrandola fuera). El aviso de margen lo dice.
+- **Ojo (privacidad)**: la parte de una imagen pegada que cuelga hacia el margen NO se puede pixelar (un Pixelar se acota a la captura). Se ve
+  en pantalla igual que sale, asi que se nota; si hay datos sensibles, hay que meter la imagen en la captura.
 

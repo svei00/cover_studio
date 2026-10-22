@@ -42,6 +42,7 @@ from core.annotate.raster import (
     lens_crops,
     load_image,
     missing_overlays,
+    overlay_frame,
 )
 from core.annotate.upscale import FACTORS, save_upscaled, scaled_output_path
 from core.annotate.svg import default_output_path, export_png, export_svg, render_bytes
@@ -153,6 +154,8 @@ class AnnotateTab(QWidget):
         self._base_qimage: QImage | None = None
         self._redacted: Image.Image | None = None
         self._spot_key: object = None
+        self._frame_key: object = None
+        self._frame_qimage: QImage | None = None
         self._warned_missing: set[str] = set()   # imagenes pegadas cuyo archivo falta y ya se aviso
         self._lens_cache: dict[str, tuple[tuple, QImage]] = {}
 
@@ -530,6 +533,7 @@ class AnnotateTab(QWidget):
         self.doc = doc
         self._base_key = None
         self._spot_key = None
+        self._frame_key = None
         self.canvas.reset_view()   # otra captura: se empieza ajustada
         self.export_btn.setEnabled(True)
         for button in self.tool_buttons.values():
@@ -563,8 +567,10 @@ class AnnotateTab(QWidget):
             # el foco solo afecta al fondo: las lupas se siguen recortando de la imagen pixelada, sin foco
             self._base_qimage = pil_to_qimage(apply_spotlight(self._redacted, self.doc.items))
             self._spot_key = spot_key
+        self._refresh_frame(overlays)
         self.canvas.set_content(
-            self._base_qimage, build_primitives(self.doc), self._lens_images(), self.doc.padding, self.doc.crop
+            self._base_qimage, build_primitives(self.doc), self._lens_images(), self.doc.padding, self.doc.crop,
+            self._frame_qimage,
         )
         view = self.doc.view
         size = f"{int(view.w)} x {int(view.h)} px"
@@ -572,6 +578,18 @@ class AnnotateTab(QWidget):
             size += f" (recorte de {self.doc.image_size[0]} x {self.doc.image_size[1]})"
         self.info_label.setText(f"{self.doc.image_path.name} - {size} - {len(self.doc.items)} anotaciones")
         self.info_label.setToolTip(self.info_label.text())
+
+    def _refresh_frame(self, overlays: tuple[ImageOverlay, ...]) -> None:
+        """El margen extra con las imagenes pegadas (y sus sombras) que se salen de la captura; se rehace solo si cambiaron las
+        imagenes, el margen, la zona exportada o la escala. None si nada se sale (entonces el margen es el relleno liso)."""
+        assert self.doc is not None
+        view = self.doc.view
+        key = (overlays, self.doc.padding, (view.x, view.y, view.w, view.h), round(self.controller.scale(), 4))
+        if key == self._frame_key:
+            return
+        self._frame_key = key
+        frame = overlay_frame(self.doc.items, view, self.doc.padding, self.controller.scale())
+        self._frame_qimage = pil_to_qimage(frame) if frame is not None else None
 
     def _warn_missing_overlays(self, overlays: tuple[ImageOverlay, ...]) -> None:
         """Avisa (una vez por archivo) de las imagenes pegadas cuyo archivo ya no existe: no se dibujan."""

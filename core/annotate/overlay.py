@@ -6,6 +6,7 @@ agrandar, reducir y volver a agrandar no degrada la imagen."""
 
 from __future__ import annotations
 
+from core.annotate import style
 from core.annotate.model import ImageOverlay, Rect
 
 FIT_RATIO = 0.9   # una imagen que no cabe se reduce para ocupar, como mucho, este tanto de la parte visible
@@ -20,6 +21,23 @@ def initial_rect(size: tuple[int, int], view: Rect, fit: float = FIT_RATIO) -> R
     w, h = max(1, round(width * ratio)), max(1, round(height * ratio))
     cx, cy = view.center
     return Rect(round(cx - w / 2), round(cy - h / 2), w, h)
+
+
+def shadow_margin(scale: float) -> int:
+    """Px que se extiende la capa de la sombra alrededor de la imagen (3 desviaciones del desenfoque + lo que cae hacia abajo):
+    el borde de la capa donde la sombra ya vale 0. Lo que se compone, y lo que decide si algo sale de la captura."""
+    return int(3 * style.OVERLAY_SHADOW_BLUR * scale) + abs(round(style.OVERLAY_SHADOW_DY * scale)) + 2
+
+
+def shadow_reach(scale: float) -> int:
+    """Hasta donde se VE la sombra (2 desviaciones + lo que cae): lo que hay que dejar de margen para no recortarla. Menor que
+    `shadow_margin`, que incluye la cola que ya es invisible."""
+    return int(2 * style.OVERLAY_SHADOW_BLUR * scale) + abs(round(style.OVERLAY_SHADOW_DY * scale))
+
+
+def drawn_extent(item: ImageOverlay, scale: float) -> Rect:
+    """La caja que se ve de una imagen pegada: ella misma y, con sombra, hasta donde llega a verse."""
+    return item.rect.inflate(shadow_reach(scale)) if item.shadow else item.rect
 
 
 def real_size_rect(item: ImageOverlay) -> Rect:

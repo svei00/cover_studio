@@ -27,7 +27,7 @@ from core.annotate.primitives import (
     build_primitives,
     doc_scale,
 )
-from core.annotate.raster import apply_overlays, apply_redactions, apply_spotlight, lens_crops, load_image
+from core.annotate.raster import apply_overlays, apply_redactions, apply_spotlight, lens_crops, load_image, overlay_frame
 from core.geometry import escape_xml, render_png, render_png_bytes
 
 
@@ -167,16 +167,20 @@ def to_svg(
     base: Image.Image,
     primitives: Sequence[Primitive],
     crops: Mapping[str, Image.Image] | None = None,
+    frame: Image.Image | None = None,
 ) -> str:
     """SVG completo: relleno (si hay padding), bitmap ya pixelado y anotaciones.
-    crops son los recortes de las lupas (raster.lens_crops)."""
+    crops son los recortes de las lupas (raster.lens_crops). `frame` (raster.overlay_frame) es la imagen del margen con lo
+    pegado que se sale de la captura: se dibuja en lugar del relleno liso."""
     width, height = canvas_size(doc)
     pad = doc.padding
     parts = [
         f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
         f'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
     ]
-    if pad:
+    if pad and frame is not None:
+        parts.append(f'<image x="0" y="0" width="{width}" height="{height}" xlink:href="{_png_data_uri(frame)}"/>')
+    elif pad:
         parts.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="{style.CARD_FILL}"/>')
     view = doc.view
     # las anotaciones siguen en coordenadas de la fuente: se traslada por -recorte
@@ -210,7 +214,9 @@ def build_svg(doc: AnnotationDoc) -> str:
     # imagenes pegadas primero: Pixelar tambien anonimiza lo pegado y las lupas pueden ampliarlo
     redacted = apply_redactions(apply_overlays(image, doc.items, doc_scale(doc)), doc.items)
     # las lupas se recortan de la imagen pixelada y SIN foco: el foco solo afecta al fondo
-    return to_svg(doc, apply_spotlight(redacted, doc.items), build_primitives(doc), lens_crops(redacted, doc.items))
+    frame = overlay_frame(doc.items, doc.view, doc.padding, doc_scale(doc))
+    return to_svg(
+        doc, apply_spotlight(redacted, doc.items), build_primitives(doc), lens_crops(redacted, doc.items), frame)
 
 
 def _check_not_original(doc: AnnotationDoc, output_path: Path, allow_overwrite: bool) -> None:

@@ -7,9 +7,10 @@ anterior estaba desactualizado; todo su backlog esta HECHO.)
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1507 tests pasan.** Arbol limpio y todo subido:
-el ultimo commit es `01951c6` (Escalar + colores de marca); antes `458a13e` (lapiz UI + Foco) y `fe2374d`
-(nucleo del lapiz).
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1577 tests pasan.** Ultimo commit al escribir esto: `ed7d41a` (la sesion WEB, autor "Claude", 28-oct: asa del tramo
+medio de la flecha en Z); antes `0a0387f` y `03a0818` (codo L/Z y edicion de varias a la vez), `ea95a43` (lienzo en blanco),
+`2916375` (menu de clic derecho), `77736a0` (pegar encima), `01951c6` (Escalar + colores de marca). La sombra en el margen extra
+(seccion 3.1f) esta hecha y SIN commitear al escribir esto.
 
 - **Pestana "Portada"**: genera portadas 16:9 (foto + banda + titulo + acento en L), vista previa en
   vivo con hilo y debounce, arrastre de la banda y del subtitulo, presets, guarda anti-sobrescritura.
@@ -20,10 +21,14 @@ el ultimo commit es `01951c6` (Escalar + colores de marca); antes `458a13e` (lap
   descartar solo si hay contenido distinto de lo ultimo generado (`_cover_signature`). Tests: `tests/test_main_window_new_cover.py`.
   Nota de pruebas: `QTest.qWait` retiene el GIL y hace que el hilo de la vista previa tarde segundos; con `app.exec()` real tarda 0,5 s.
 - **Pestana "Anotar"**: anota capturas con la identidad de Excel Solutions. Herramientas: Seleccionar,
-  Marcador (con flecha), Recuadro, Resaltar, Flecha, Linea (puntas y estilos opcionales), **Lapiz** y
+  Marcador (con flecha), Recuadro, Resaltar, Flecha y Linea (puntas, estilos, **codo en L o en Z** con asa para el tramo medio), **Lapiz** y
   **Resaltador libre** (mano alzada, suavizado), Paso, Texto, Pixelar, **Foco**, Lupa (rectangular por
   defecto; circular, ovalada o con esquinas; marco, conector y resplandor), Recortar (no destructivo).
-  Todas se repiten sin volver a pulsar el boton MENOS Texto, Seleccionar, Recortar y Foco (`STICKY_TOOLS`).
+  Check/Cruz/Icono (iconos vectoriales). Todas se repiten sin volver a pulsar el boton MENOS Texto, Seleccionar, Recortar y Foco
+  (`STICKY_TOOLS`). **Seleccion multiple** (Ctrl/Shift + clic, rectangulo, Ctrl+A): alinear (contra la seleccion o la imagen),
+  distribuir, mover en grupo y **editar el formato de varias del mismo tipo a la vez** (`controller.edit_target()`).
+  **Pegar encima** (Ctrl+Shift+V / boton): imagen del portapapeles sobre la captura, movible y redimensionable sin deformar, con
+  sombra flotante, esquinas y borde; **menu de clic derecho** y **orden de capas** (Traer al frente...); **Lienzo en blanco**.
   Paleta del documento + color propio por anotacion, margen extra, escala de trazo, deshacer/rehacer,
   restablecer al valor por defecto (doble clic en la etiqueta o boton), zoom/desplazamiento, guardar
   proyecto (`.anotar.json`), copiar, exportar PNG/SVG, aviso de cambios sin guardar.
@@ -41,7 +46,9 @@ Mapa de modulos nuevos de esta etapa (todo con tests en `tests/`):
 - `core/annotate/freehand.py` (lapiz: decimar -> suavizar Chaikin -> Ramer-Douglas-Peucker; curva Catmull-Rom
   compartida por Qt y SVG via `PPolyline`).
 - `core/annotate/raster.py` (`apply_redactions`, `apply_spotlight`, `lens_crops`; orden del pipeline:
-  captura -> pixelado -> recortes de lupa -> foco -> anotaciones).
+  captura -> IMAGENES PEGADAS -> pixelado -> recortes de lupa -> foco -> anotaciones; `overlay_frame` arma el marco del margen).
+- `core/annotate/overlay.py` (imagen pegada: tamano inicial, sombra), `layers.py` (orden), `blank.py` (lienzo en blanco), `align.py`,
+  `icons.py`; `ui/annotate/context_menu.py`, `blank_dialog.py`.
 - `core/annotate/upscale.py`, `core/brand.py`, `core/user_settings.py` (colores personalizados + escritura
   atomica `write_text_atomic`), `ui/brand_dialog.py`.
 
@@ -58,6 +65,9 @@ Al empezar: corre `git status` y `git log --oneline -5`, y la suite completa.
   de ventana, pruebas debiles).
 - **Fases chicas y revisables.** Su limite semanal es real: no lances subagentes caros sin avisar.
   Prefiere Opus para arquitectura y Sonnet para ejecutar.
+- **Hay una sesion WEB (Claude Code en la web) que tambien commitea sola** (autor "Claude", sin pedirlo; p. ej. `03a0818`..`ed7d41a`). Antes de
+  trabajar, `git log --format='%h %an %s' -10` para ver si hay commits que no conoces y lee lo que documentaron; si el remoto avanzo mientras
+  tienes commits locales sin subir, hay que integrar (`git pull --rebase`) antes de empujar.
 - **Commits: no los hagas tu** (salvo que el pida otra cosa, como la correccion del commit del TRUNC, que
   si autorizo explicitamente, incluido el force push). Dale los comandos en bloques ```bash``` separados.
   Mensaje en ingles o espanol claro, **sin Co-Authored-By** (lo pidio explicitamente). **Despues de que el
@@ -69,12 +79,12 @@ Al empezar: corre `git status` y `git log --oneline -5`, y la suite completa.
 
 ## 3. Pendiente: lo que el usuario pidio y aun NO esta hecho
 
-### 3.1 Intensidad y grosor del Resplandor: HECHO (sin commitear al escribir esto)
+### 3.1 Intensidad y grosor del Resplandor: HECHO
 Ver `docs/arquitectura-anotar.md` ("Resplandor ajustable"). Campos `glow_strength`/`glow_size` en las 5 anotaciones con
 resplandor, helper `style.glow_rings`, filas en el panel. Tests: `tests/test_annotate_glow_tuning.py` y `_ui.py`.
 Verificado a ojo sobre fondo claro y oscuro.
 
-### 3.1b Conector de la lupa movible: HECHO (sin commitear al escribir esto)
+### 3.1b Conector de la lupa movible: HECHO
 Ver `docs/arquitectura-anotar.md` ("Conector de la lupa"). Tests: `tests/test_annotate_lens_connector_edit.py`.
 El CODO en angulo recto tambien esta hecho (`connector_route`, `PPath`; `tests/test_annotate_lens_connector_elbow.py`).
 
@@ -88,7 +98,7 @@ caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (
 Ver `docs/arquitectura-anotar.md` ("Seleccion multiple, alinear y distribuir"). Tests: `test_annotate_multiselect.py`,
 `test_annotate_align.py`. **`selected_item()` es None con 2+ seleccionadas**: todo lo que edita propiedades es de una sola.
 
-### 3.1d-bis Editar formato de varias a la vez + codo en flechas/lineas: HECHO (sin commitear al escribir esto)
+### 3.1d-bis Editar formato de varias a la vez + codo en flechas/lineas: HECHO (lo hizo la sesion web)
 Ver `docs/arquitectura-anotar.md` ("Cambiar el formato de varias a la vez" y "Flecha y linea con codo"). Tests: `test_annotate_multiedit.py`,
 `test_annotate_arrow_elbow.py`. **Ojo: `selected_item()` sigue siendo None con 2+; lo que edita propiedades usa `controller.edit_target()`.**
 "Distribuir" paso a la barra compartida de alinear. La Z (dos esquinas) tambien esta hecha. El tramo del medio de la Z tiene asa en el lienzo. Pendiente: la flecha del Marcador no lleva codo.
@@ -96,10 +106,8 @@ Ver `docs/arquitectura-anotar.md` ("Cambiar el formato de varias a la vez" y "Fl
 ### 3.1e Pegar encima (Ctrl+Shift+V) + menu de clic derecho + lienzo en blanco: LAS TRES FASES HECHAS
 Ver `docs/arquitectura-anotar.md` ("Pegar encima", "Menu de clic derecho y orden de las capas" y "Lienzo en blanco"). Tests:
 `test_annotate_overlay.py`, `test_annotate_overlay_ui.py`, `test_annotate_layers.py`, `test_annotate_blank.py`. Fases 1 y 2
-commiteadas (`77736a0`, `2916375`); la fase 3 (boton "Lienzo en blanco") esta hecha y SIN commitear al escribir esto.
+commiteadas (`77736a0`, `2916375`, `ea95a43`).
 **Pendiente / ideas (no pedidas):**
-- **La sombra se recorta en el borde de la captura** (el "Margen extra" no la deja salir). Se le dijo al usuario; falta implementar la
-  composicion sobre un lienzo ampliado si la quiere.
 - Atajos para el orden (Ctrl+] / Ctrl+[), menu en un hueco (Pegar encima), fondo transparente del lienzo, cambiar tamano o color de un
   lienzo ya creado.
 - Fase B de iconos (emojis como stickers) puede reutilizar `ImageOverlay`.
@@ -107,6 +115,17 @@ commiteadas (`77736a0`, `2916375`); la fase 3 (boton "Lienzo en blanco") esta he
   los puntos `AnnotateCanvas._exec_menu`, `AnnotateTab._ask_discard` y `AnnotateTab._ask_blank_canvas` (conftest los anula). Agregar un
   boton a la fila de herramientas cambia cuantas filas ocupa, el zoom de ajuste y, con el, redondeos de flotantes en pruebas que comparen
   coordenadas con `==`: usa `pytest.approx`.
+
+### 3.1f Sombra de la imagen pegada en el margen extra: HECHO (sin commitear al escribir esto)
+Ver `docs/arquitectura-anotar.md` ("Pegar encima: marco del margen extra"). Tests: `tests/test_annotate_overlay_frame.py`. Con "Margen
+extra" la sombra y lo que cuelga de una imagen pegada se ven (pantalla y exportacion); sin margen se recortan en el borde como antes.
+
+### 3.1g Llave "{" para senalar dos cosas: PEDIDA (2026-11-04), SIN HACER
+El usuario pregunto si se puede agregar una LLAVE (brace) que abarque dos elementos. Si se puede: anotacion `Brace(id, start, end, depth,
+flip, color, width, glow...)` como la Flecha (dos extremos con asas), dibujada como curvas Bezier aplanadas en una `PPolyline` (mismo
+patron que el lapiz: Qt y SVG coinciden); el pico apunta de un lado u otro (`flip`) a `depth` px del tramo y `depth` se ajusta con un asa o
+en el panel. Herramienta "Llave", resplandor ajustable, color y grosor como las demas. Falta confirmar con el usuario: si lleva texto
+(etiqueta en el pico), y si lo quiere en las 4 orientaciones (por el angulo entre `start` y `end` sale gratis).
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
@@ -168,8 +187,7 @@ byte-identico. El usuario decide cuando; no la empieces sin preguntar.
 
 > Continuamos Cover Studio en `D:\repos\cover_studio`. Lee primero `docs/siguiente-sesion.md` (estado,
 > preferencias, trampas y pendiente) y luego la seccion relevante de `docs/arquitectura-anotar.md`. Corre
-> `git status`, `git log --oneline -5` y la suite de tests. Lo siguiente es la seccion 3.1: poder cambiar la
-> INTENSIDAD y el GROSOR del Resplandor de las anotaciones (marcador, flecha, paso, lupa y conector, lapiz).
-> Confirma en una linea que "grosor" es el alcance del halo, dime tu plan en pocas lineas y espera mi visto
-> bueno antes de escribir codigo. Trabaja en fases chicas, con tests y verificacion visual en la ventana
+> `git status`, `git log --oneline -8` y la suite de tests. Lo siguiente es la seccion 3.1g: la LLAVE "{" para senalar dos cosas
+> (herramienta nueva de Anotar). Confirma conmigo lo que esta marcado como pendiente de confirmar, dime tu plan en pocas lineas y espera mi
+> visto bueno antes de escribir codigo. Trabaja en fases chicas, con tests y verificacion visual en la ventana
 > real, y dame los comandos de commit (sin Co-Authored-By); despues de que commitee, verifica con git.
