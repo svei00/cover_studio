@@ -120,12 +120,29 @@ commiteadas (`77736a0`, `2916375`, `ea95a43`).
 Ver `docs/arquitectura-anotar.md` ("Pegar encima: marco del margen extra"). Tests: `tests/test_annotate_overlay_frame.py`. Con "Margen
 extra" la sombra y lo que cuelga de una imagen pegada se ven (pantalla y exportacion); sin margen se recortan en el borde como antes.
 
-### 3.1g Llave "{" para senalar dos cosas: PEDIDA (2026-11-04), SIN HACER
-El usuario pregunto si se puede agregar una LLAVE (brace) que abarque dos elementos. Si se puede: anotacion `Brace(id, start, end, depth,
-flip, color, width, glow...)` como la Flecha (dos extremos con asas), dibujada como curvas Bezier aplanadas en una `PPolyline` (mismo
-patron que el lapiz: Qt y SVG coinciden); el pico apunta de un lado u otro (`flip`) a `depth` px del tramo y `depth` se ajusta con un asa o
-en el panel. Herramienta "Llave", resplandor ajustable, color y grosor como las demas. Falta confirmar con el usuario: si lleva texto
-(etiqueta en el pico), y si lo quiere en las 4 orientaciones (por el angulo entre `start` y `end` sale gratis).
+### 3.1g Flecha dinamica (estilo ShareX) + familia "llave": DECIDIDO con el usuario (2026-11-05), SIN HACER
+El usuario quiere la flecha mas dinamica, como la de ShareX (y no la fina de Lightshot), y una herramienta de llave que aproveche el mismo
+diseno. **Marco los 4 rasgos de la flecha y 3 extras de la llave.** Hoy `Arrow` = linea de grosor parejo + punta triangular rellena o punto,
+rayas, resplandor y codo L/Z (`route`, `elbow_z`, `elbow_split`). No se vio una captura de la flecha de ShareX: si el usuario la pasa, copiarla.
+
+**A. Flecha dinamica** (campos NUEVOS con valor por defecto = la flecha de hoy; los proyectos viejos abren identicos):
+- **Conica**: cuerpo que va de delgado en la cola a grueso cerca de la punta (poligono relleno `PPolygon` por el camino, sin raya).
+- **Curva**: nueva ruta `ConnectorRoute.CURVE` (Bezier cuadratica con un punto de control; asa en el medio del lienzo como el asa de la Z).
+  Excluyente con el codo (la ruta es una sola). Tolerancia de seleccion por distancia a la curva aplanada.
+- **Punta grande y solida**: tamano de punta propio (`head_size`, multiplicador) que escala con el grosor.
+- **Sombra suave**: `shadow` + intensidad, distinta del resplandor; capas apiladas desplazadas hacia abajo (igual que `glow_rings`, para que Qt y
+  SVG coincidan sin filtros). Cuenta para `item_box`/`required_padding`.
+- Propuesta: nuevo campo de estilo (clasica / dinamica); la herramienta Flecha crea por defecto la DINAMICA y Linea y la flecha del Marcador
+  se quedan como estan. Confirmar con el usuario si prefiere otro default.
+
+**B. Llave y familia** (anotacion nueva `Bracket(id, start, end, kind, depth, flip, color, width, glow..., tip)`; `kind` = LLAVE `{ }`,
+CORCHETE `[ ]`, PARENTESIS `( )` o COTA `|<->|`; dibujada con curvas Bezier aplanadas en una `PPolyline`, el mismo patron del lapiz; dos extremos
+con asas como la Flecha, el pico de un lado u otro (`flip`) a `depth` px del tramo, funciona en cualquier angulo):
+- **Etiqueta en el pico** que se puede APAGAR (casilla): "Total", "Error", "Paso 1"... con un selector de textos rapidos mas texto libre.
+- **Un "spot" libre en el pico** para "alguna otra cosa que se me ocurra": modelarlo como contenido del pico = NADA / TEXTO / ICONO (reusa
+  `IconKind`), dejando la puerta abierta a otros (sticker, imagen). En la COTA el texto es la medida.
+- Orden sugerido: 1) flecha (A), que es lo que mas se usa; 2) llave base con corchete y parentesis; 3) etiqueta + spot + cota.
+- Sonnet basta (la geometria la define este documento); ver las trampas de "anotaciones nuevas tocan siempre los mismos sitios".
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
@@ -187,7 +204,7 @@ byte-identico. El usuario decide cuando; no la empieces sin preguntar.
 
 > Continuamos Cover Studio en `D:\repos\cover_studio`. Lee primero `docs/siguiente-sesion.md` (estado,
 > preferencias, trampas y pendiente) y luego la seccion relevante de `docs/arquitectura-anotar.md`. Corre
-> `git status`, `git log --oneline -8` y la suite de tests. Lo siguiente es la seccion 3.1g: la LLAVE "{" para senalar dos cosas
-> (herramienta nueva de Anotar). Confirma conmigo lo que esta marcado como pendiente de confirmar, dime tu plan en pocas lineas y espera mi
+> `git status`, `git log --oneline -8` y la suite de tests. Lo siguiente es la seccion 3.1g: la flecha dinamica estilo ShareX y la
+> familia de llave (herramienta nueva de Anotar). Confirma conmigo lo que esta marcado como pendiente de confirmar, dime tu plan en pocas lineas y espera mi
 > visto bueno antes de escribir codigo. Trabaja en fases chicas, con tests y verificacion visual en la ventana
 > real, y dame los comandos de commit (sin Co-Authored-By); despues de que commitee, verifica con git.
