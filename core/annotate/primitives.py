@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from core.annotate import bracket as bracket_geometry
 from core.annotate import freehand, icons, lens, style
 from core.annotate.palette import BRAND_PALETTE, Palette
 from core.annotate.model import (
@@ -17,6 +18,8 @@ from core.annotate.model import (
     Arrow,
     ArrowBody,
     ArrowSide,
+    Bracket,
+    BracketKind,
     ConnectorRoute,
     Highlight,
     HeadStyle,
@@ -34,6 +37,8 @@ from core.annotate.model import (
     Stroke,
     TextAlign,
     TextLabel,
+    TipContent,
+    text_label_from_preset,
 )
 from core.annotate.text_measure import measure_line
 
@@ -797,6 +802,58 @@ def doc_scale(doc: AnnotationDoc) -> float:
     return doc.style_scale if doc.style_scale else style.auto_scale(doc.image_size[0])
 
 
+def bracket_tip_item(b: Bracket, scale: float) -> TextLabel | Icon | None:
+    """Lo que lleva el pico de una llave, ya colocado: una etiqueta de texto o un icono, FUERA de la forma, pasando el pico (separado
+    `BRACKET_TIP_GAP`) y en la direccion en que este apunta, a cualquier angulo. None si el pico va vacio, el tramo no mide nada o no
+    hay texto (ni el de una cota, que muestra su medida)."""
+    tip = bracket_geometry.tip_point(b)
+    if b.tip is TipContent.NONE or tip is None:
+        return None
+    no = bracket_geometry.outward(b)
+    gap = style.BRACKET_TIP_GAP * scale
+    if b.tip is TipContent.TEXT:
+        text = bracket_geometry.label_text(b)
+        if not text:
+            return None
+        preset = b.label_preset if b.label_preset in style.TEXT_PRESETS else "nota"
+        label = replace(text_label_from_preset("tip", (0.0, 0.0), text, preset), size=b.label_size)
+        box = label_box(label, scale)
+        half = abs(no[0]) * box.w / 2 + abs(no[1]) * box.h / 2          # lo que la caja se asoma en la direccion del pico
+        cx, cy = tip[0] + no[0] * (gap + half), tip[1] + no[1] * (gap + half)
+        return replace(label, pos=(cx - box.w / 2, cy - box.h / 2))
+    reach = gap + b.tip_icon_size * scale * 1.15                         # el radio del icono mas su borde
+    return Icon("tip", (tip[0] + no[0] * reach, tip[1] + no[1] * reach), b.tip_icon, size=b.tip_icon_size)
+
+
+def bracket_primitives(b: Bracket, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
+    """La forma (polilineas de trazo redondo, con el halo en capas del resplandor debajo), las puntas de la cota y lo del pico."""
+    paths = bracket_geometry.outline_paths(b)
+    if not paths:
+        return []
+    color = b.color or palette.arrow
+    width = b.width * scale
+    out: list[Primitive] = []
+    if b.glow:
+        glow_color = b.glow_color or palette.glow
+        for off, op in reversed(style.glow_rings(b.glow_strength, b.glow_size)):
+            for path in paths:
+                out.append(PPolyline(tuple(path), glow_color, width + 2 * off * scale, op * style.CONNECTOR_GLOW_STRENGTH))
+    for path in paths:
+        out.append(PPolyline(tuple(path), color, width))
+    if b.kind is BracketKind.DIMENSION:
+        line = paths[2]                                                   # la linea a `depth`: lleva una punta en cada extremo, hacia afuera
+        head = style.ARROW_HEAD * scale * min(3.0, max(0.5, b.width / style.MARKER_STROKE)) * 0.8
+        u = bracket_geometry.span(b)[0]
+        out.append(PPolygon(_head_points(line[0], -u[0], -u[1], head), color, None))
+        out.append(PPolygon(_head_points(line[1], u[0], u[1], head), color, None))
+    tip = bracket_tip_item(b, scale)
+    if isinstance(tip, TextLabel):
+        out.extend(text_label_primitives(tip, scale))
+    elif isinstance(tip, Icon):
+        out.extend(icon_primitives(tip, scale))
+    return out
+
+
 def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[Primitive]:
     """Primitivas de una sola anotacion (las Redaction no generan: viven en el bitmap)."""
     if isinstance(item, Marker):
@@ -816,6 +873,8 @@ def item_primitives(doc: AnnotationDoc, item: Annotation, scale: float) -> list[
         return highlight_primitives(item, scale, doc.palette)
     if isinstance(item, Stroke):
         return stroke_primitives(item, scale, doc.palette)
+    if isinstance(item, Bracket):
+        return bracket_primitives(item, scale, doc.palette)
     return []
 
 

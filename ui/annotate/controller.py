@@ -18,6 +18,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QUndoCommand, QUndoStack
 
 from core.annotate import align as aligning
+from core.annotate import bracket as bracket_geometry
 from core.annotate import layers
 from core.annotate import crop as cropping
 from core.annotate import freehand
@@ -28,6 +29,8 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowBody,
+    Bracket,
+    BracketKind,
     ArrowSide,
     Highlight,
     HeadStyle,
@@ -69,6 +72,7 @@ class Tool(str, Enum):
     HIGHLIGHT = "highlight"
     ARROW = "arrow"
     LINE = "line"
+    BRACKET = "bracket"
     PEN = "pen"
     PEN_MARKER = "pen-marker"
     STEP = "step"
@@ -85,7 +89,7 @@ class Tool(str, Enum):
 # Herramientas que se QUEDAN activas tras dibujar (dos recuadros seguidos sin volver a elegirla); se sale con
 # Esc o eligiendo otra. El texto no: abre su editor y lo normal es una sola etiqueta.
 STICKY_TOOLS = frozenset({
-    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.PEN, Tool.PEN_MARKER, Tool.STEP,
+    Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.ARROW, Tool.LINE, Tool.BRACKET, Tool.PEN, Tool.PEN_MARKER, Tool.STEP,
     Tool.CHECK, Tool.CROSS, Tool.ICON, Tool.REDACT, Tool.LENS,
 })
 MAX_LIVE_POINTS = 20000   # puntos del mouse que se guardan mientras se dibuja un trazo (el resto se ignora)
@@ -276,6 +280,7 @@ class EditController(QObject):
         self.icon_kind = IconKind.WARNING       # el icono que coloca la herramienta Icono (Check y Cruz tienen la suya)
         self.icon_style = IconStyle.SEAL        # el estilo con que se colocan los iconos nuevos (el ultimo que se eligio)
         self._press_arrows: dict[str, tuple[Point, Point]] = {}   # flechas de los marcadores al empezar el gesto
+        self.bracket_kind = BracketKind.BRACE   # la forma con que se dibujan las llaves nuevas (la que se eligio por ultima vez)
         self.free_resize = False   # Mayus mientras se arrastra un asa: la imagen pegada se estira sin conservar la proporcion
         self._stroke_raw: list[Point] = []   # puntos crudos del mouse del trazo a mano alzada en curso
 
@@ -521,7 +526,7 @@ class EditController(QObject):
         elif self.tool is Tool.SELECT:
             self._press_select(p, tol, additive)
         elif self.tool in (
-            Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.LENS,
+            Tool.MARKER, Tool.MARKER_PLAIN, Tool.HIGHLIGHT, Tool.REDACT, Tool.ARROW, Tool.LINE, Tool.BRACKET, Tool.LENS,
             Tool.PEN, Tool.PEN_MARKER, Tool.FOCUS,
         ):
             self._begin_create(p)
@@ -597,6 +602,8 @@ class EditController(QObject):
             item = Magnifier(item_id, Rect(p[0], p[1], 0.0, 0.0), p)
         elif self.tool is Tool.LINE:
             item = Arrow(item_id, p, p, head_end=HeadStyle.NONE)   # una flecha sin puntas
+        elif self.tool is Tool.BRACKET:
+            item = Bracket(item_id, p, p, kind=self.bracket_kind)
         elif self.tool is Tool.PEN:
             item = Stroke(item_id, (p,))
             self._stroke_raw = [p]
@@ -688,6 +695,9 @@ class EditController(QObject):
                 if len(self._stroke_raw) < MAX_LIVE_POINTS and freehand.should_add(self._stroke_raw, p):
                     self._stroke_raw.append(p)
                     self._set_item(replace(self._orig, points=tuple(self._stroke_raw)))
+            elif isinstance(self._orig, Bracket):
+                # la altura del pico crece con el largo mientras se arrastra (despues se ajusta con su asa o en el panel)
+                self._set_item(replace(self._orig, end=p, depth=bracket_geometry.default_depth(self._orig.start, p)))
             elif isinstance(self._orig, Arrow):
                 self._set_item(replace(self._orig, end=p))
             elif isinstance(self._orig, Magnifier):
@@ -741,7 +751,7 @@ class EditController(QObject):
 
     @staticmethod
     def _too_small(item: Annotation) -> bool:
-        if isinstance(item, Arrow):
+        if isinstance(item, (Arrow, Bracket)):
             return abs(item.end[0] - item.start[0]) + abs(item.end[1] - item.start[1]) < MIN_ARROW
         if isinstance(item, Magnifier):
             return item.source.w < MIN_LENS_SOURCE or item.source.h < MIN_LENS_SOURCE

@@ -886,3 +886,33 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - No hecho: asa de arrastre para el grosor o la punta en el lienzo; que la flecha del Marcador sea dinamica; curva con dos asas (Bezier
   cubica) para formas en S.
 
+### Llave, corchete, parentesis y cota (`Bracket`)
+
+- **Que es**: una anotacion de DOS extremos como la flecha (`start`, `end`: el tramo que abarca) con un PICO a `depth` px hacia un lado u otro
+  (`flip`), para senalar varias cosas a la vez. `kind` (`BracketKind`): LLAVE `{ }`, CORCHETE `[ ]`, PARENTESIS `( )` o COTA `|<->|`. Una sola
+  herramienta ("Llave", pegajosa); la forma se cambia en el panel y esa queda como la de las llaves nuevas (`controller.bracket_kind`).
+- **Geometria** (`core/annotate/bracket.py`, pura): se calcula en coordenadas LOCALES (x a lo largo del tramo, y hacia el pico, de 0 en el tramo a
+  `depth`) y se lleva a la imagen con la direccion del tramo, asi funciona en cualquier angulo y lado (hay un test que compara contra la forma
+  horizontal). Llave = dos cuartos de elipse de x-radio `min(depth / 2, L / 4)` (un tramo corto no la rompe: se angosta y conserva la
+  profundidad), un tramo recto a media altura y un pico; corchete = tres lados con esquinas redondeadas; parentesis = Bezier cuadratica con el
+  pico a `depth`; cota = dos lineas de extension (con un resalte) y la linea a `depth`, mas una punta de flecha pequena en cada extremo. Largo 0
+  no dibuja nada. Todo se dibuja como `PPolyline` de trazo redondo (el patron del lapiz: Qt y SVG coinciden) y el resplandor es el halo en
+  capas de siempre; el ajustable (intensidad y grosor del halo) aplica igual.
+- **Contenido del pico** (`TipContent`: NADA / TEXTO / ICONO): `primitives.bracket_tip_item` devuelve un `TextLabel` o un `Icon` YA colocados FUERA de
+  la forma, pasando el pico (separado `BRACKET_TIP_GAP`) en la direccion en que apunta, a cualquier angulo (se centra la caja contando cuanto se
+  asoma en esa direccion). El texto reusa los presets de etiqueta (`label_preset`: Nota, Exito, Alerta, Alerta 2, Nota 2, Libre) y `label_size`; en
+  el panel hay textos rapidos (`style.BRACKET_QUICK_TEXTS`: Total, Error, Paso 1, Paso 2, Ojo, Importante, Nota) o se escribe el propio. Apagar el
+  pico (NADA) conserva el texto. En la COTA, un texto vacio muestra su MEDIDA ("290 px", en px de la captura). El icono reusa `IconKind` y
+  `icon_primitives`: es el "spot" libre, y la puerta queda abierta a otros contenidos (sticker, imagen) agregando valores a `TipContent`.
+- **Edicion**: asas START y END (como la flecha) y MID en el pico: arrastrarlo cambia la profundidad y, si cruza el tramo, el lado
+  (`edit.resize_item`; soltar el asa donde esta deja la misma forma). Se selecciona por el trazo (con su mitad de grosor), por el texto o por el
+  icono; la caja de seleccion incluye el texto; alinear, mover, editar varias a la vez y deshacer funcionan como en las demas. El texto del pico
+  cuenta en `item_box` (y por tanto en `required_padding`).
+- **Proyecto**: `{"type":"bracket", ...}` con todos los campos; lo ausente o invalido cae al de fabrica (`kind` BRACE, `tip` NADA, profundidad 28,
+  texto "" ...), el texto se acota a 200 caracteres y un estilo desconocido cae a "nota".
+- Panel (`_PAGE_BRACKET`): Forma, Profundidad (restablecer = la proporcional al largo), Invertir lado, Grosor, Color, Resplandor (con sus filas),
+  En el pico (Nada / Texto / Icono) y, segun eso, Texto / Estilo / Tamano o Icono / Tamano del icono. Tests: `tests/test_annotate_bracket.py`
+  (incluye paridad Qt contra resvg de las cuatro formas).
+- No hecho: color propio del texto del pico (hoy lo da el preset), rayas en el trazo, una llave que se ajuste sola a lo seleccionado, y
+  contenidos del pico distintos de texto e icono.
+

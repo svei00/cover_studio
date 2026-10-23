@@ -75,6 +75,7 @@ TOOL_BUTTONS = (
     (Tool.HIGHLIGHT, "Resaltar", "Resaltador: pinta una zona (texto, celdas) con un color translucido; arrastra sobre ella"),
     (Tool.ARROW, "Flecha", "Flecha dinamica: arrastra del inicio a la punta. En el panel: cuerpo conico o parejo, curva (con asa), codo, punta, sombra"),
     (Tool.LINE, "Linea", "Linea recta (sirve de conector): arrastra del inicio al final; las puntas y el estilo se eligen en el panel"),
+    (Tool.BRACKET, "Llave", "Llave { } para senalar varias cosas a la vez: arrastra de un extremo al otro. En el panel: corchete, parentesis o cota, el lado, y un texto o icono en el pico"),
     (Tool.PEN, "Lapiz", "Dibuja a mano alzada: mantén el boton y arrastra. El trazo se suaviza solo al soltar"),
     (Tool.PEN_MARKER, "Resaltador libre", "Resalta a mano alzada con un trazo ancho que deja ver (y leer) lo de abajo"),
     (Tool.STEP, "Paso", "Circulo numerado: clic donde va; la numeracion continua sola"),

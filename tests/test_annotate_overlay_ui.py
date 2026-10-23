@@ -368,4 +368,5 @@ def test_cada_indice_de_pagina_del_panel_apunta_a_su_pagina(tab):
     }
     for index, widget in pages.items():
         assert p._pages.widget(index).isAncestorOf(widget), index
-    assert p._pages.count() == panel_module._PAGE_IMAGE + 1
+    assert p._pages.widget(panel_module._PAGE_BRACKET).isAncestorOf(p._br_kind)
+    assert p._pages.count() == panel_module._PAGE_BRACKET + 1                          # la ultima pagina registrada

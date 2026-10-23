@@ -11,14 +11,25 @@ from core.annotate.freehand import MAX_POINTS
 from core.annotate.errors import AnnotateError
 from core.annotate.palette import is_valid_hex, palette_from_dict, palette_to_dict
 from core.annotate.style import (
+    BRACKET_LABEL_SIZE,
+    BRACKET_WIDTH,
     DEFAULT_CURVE_BEND,
+    DEFAULT_TIP_ICON_SIZE,
     DEFAULT_GLOW_SIZE,
     DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
+    TEXT_PRESETS,
     MAX_ARROW_SHADOW,
+    MAX_BRACKET_DEPTH,
+    MAX_LABEL_LENGTH,
+    MAX_LABEL_SIZE,
+    MAX_TIP_ICON_SIZE,
+    MIN_BRACKET_DEPTH,
+    MIN_LABEL_SIZE,
+    MIN_TIP_ICON_SIZE,
     MAX_CURVE_BEND,
     MAX_GLOW_SIZE,
     MAX_HEAD_SIZE,
@@ -62,6 +73,8 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowBody,
+    Bracket,
+    BracketKind,
     ArrowSide,
     ConnectorRoute,
     Highlight,
@@ -79,6 +92,7 @@ from core.annotate.model import (
     ImageOverlay,
     Redaction,
     Spotlight,
+    TipContent,
     StepBadge,
     StepShape,
     Stroke,
@@ -239,6 +253,12 @@ def item_to_dict(item: Annotation) -> dict:
                 "elbow_z": item.elbow_z, "elbow_split": item.elbow_split, "body": item.body.value,
                 "head_size": item.head_size, "curve_bend": item.curve_bend, "shadow": item.shadow,
                 "shadow_strength": item.shadow_strength}
+    if isinstance(item, Bracket):
+        return {"type": "bracket", "id": item.id, "start": list(item.start), "end": list(item.end), "kind": item.kind.value,
+                "depth": item.depth, "flip": item.flip, "color": item.color, "width": item.width, "glow": item.glow,
+                "glow_color": item.glow_color, "glow_strength": item.glow_strength, "glow_size": item.glow_size,
+                "tip": item.tip.value, "label": item.label, "label_preset": item.label_preset, "label_size": item.label_size,
+                "tip_icon": item.tip_icon.value, "tip_icon_size": item.tip_icon_size}
     if isinstance(item, StepBadge):
         return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
                 "color": item.color, "shape": item.shape.value, "fill_color": item.fill_color,
@@ -318,6 +338,26 @@ def item_from_dict(data: dict) -> Annotation:
                 _number_or_default(data.get("curve_bend"), -MAX_CURVE_BEND, MAX_CURVE_BEND, DEFAULT_CURVE_BEND),
                 data.get("shadow") is True,
                 _number_or_default(data.get("shadow_strength"), MIN_ARROW_SHADOW, MAX_ARROW_SHADOW, 1.0),
+            )
+        if kind == "bracket":
+            label = data.get("label")
+            preset = data.get("label_preset")
+            return Bracket(
+                data["id"], tuple(data["start"]), tuple(data["end"]),
+                _enum_or_default(BracketKind, data.get("kind"), BracketKind.BRACE),
+                _number_or_default(data.get("depth"), MIN_BRACKET_DEPTH, MAX_BRACKET_DEPTH, 28.0),
+                data.get("flip") is True,
+                _color_or_none(data.get("color")),
+                _number_or_default(data.get("width"), MIN_LINE_WIDTH, MAX_LINE_WIDTH, BRACKET_WIDTH),
+                data.get("glow") is not False,
+                _color_or_none(data.get("glow_color")),
+                _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
+                _enum_or_default(TipContent, data.get("tip"), TipContent.NONE),
+                label if isinstance(label, str) and len(label) <= MAX_LABEL_LENGTH else "",
+                preset if isinstance(preset, str) and preset in TEXT_PRESETS else "nota",
+                _number_or_default(data.get("label_size"), MIN_LABEL_SIZE, MAX_LABEL_SIZE, BRACKET_LABEL_SIZE),
+                _enum_or_default(IconKind, data.get("tip_icon"), IconKind.CHECK),
+                _number_or_default(data.get("tip_icon_size"), MIN_TIP_ICON_SIZE, MAX_TIP_ICON_SIZE, DEFAULT_TIP_ICON_SIZE),
             )
         if kind == "step":
             return StepBadge(

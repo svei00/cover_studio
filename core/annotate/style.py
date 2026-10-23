@@ -110,6 +110,26 @@ ARROW_SHADOW_RINGS: tuple[tuple[float, float], ...] = tuple(
 )
 
 
+# Llave, corchete, parentesis y cota (`Bracket`)
+BRACKET_WIDTH = 4.0
+MIN_BRACKET_DEPTH = 4.0                # alto del pico respecto al tramo (px de la captura)
+MAX_BRACKET_DEPTH = 400.0
+MIN_DEFAULT_BRACKET_DEPTH = 14.0       # al dibujarla: proporcional al largo, entre estos dos
+MAX_DEFAULT_BRACKET_DEPTH = 60.0
+DEFAULT_BRACKET_DEPTH_RATIO = 0.12
+BRACKET_SQUARE_CORNER = 8.0            # esquinas del corchete
+BRACKET_DIM_OVERSHOOT = 5.0            # cuanto pasan de la linea las lineas de extension de la cota
+BRACKET_TIP_GAP = 6.0                  # separacion entre el pico y su texto o icono (a escala 1)
+BRACKET_LABEL_SIZE = 22.0
+MIN_LABEL_SIZE = 8.0
+MAX_LABEL_SIZE = 120.0
+DEFAULT_TIP_ICON_SIZE = 14.0           # radio del icono del pico (a escala 1)
+MIN_TIP_ICON_SIZE = 4.0
+MAX_TIP_ICON_SIZE = 100.0
+MAX_LABEL_LENGTH = 200
+BRACKET_QUICK_TEXTS = ("Total", "Error", "Paso 1", "Paso 2", "Ojo", "Importante", "Nota")
+
+
 def arrow_shadow_rings(strength: float = 1.0) -> tuple[tuple[float, float], ...]:
     """Capas del desenfoque de la sombra de una flecha: (separacion, opacidad), con la intensidad aplicada."""
     return tuple((off, min(1.0, op * strength)) for off, op in ARROW_SHADOW_RINGS)

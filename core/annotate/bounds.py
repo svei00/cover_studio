@@ -8,7 +8,7 @@ from collections.abc import Iterable
 
 from core.annotate import freehand
 from core.annotate import overlay as overlay_geometry
-from core.annotate.model import Annotation, AnnotationDoc, ImageOverlay, Rect, TextLabel
+from core.annotate.model import Annotation, AnnotationDoc, Bracket, ImageOverlay, Rect, TextLabel
 from core.annotate.primitives import (
     PCircle,
     PEllipse,
@@ -19,6 +19,7 @@ from core.annotate.primitives import (
     PPolyline,
     PRect,
     Primitive,
+    bracket_tip_item,
     doc_scale,
     item_primitives,
     label_box,
@@ -69,6 +70,8 @@ def item_box(doc: AnnotationDoc, item: Annotation, scale: float) -> Rect | None:
     boxes = [b for p in item_primitives(doc, item, scale) if (b := primitive_bounds(p)) is not None]
     if isinstance(item, TextLabel):
         boxes.append(label_box(item, scale))
+    if isinstance(item, Bracket) and isinstance(tip := bracket_tip_item(item, scale), TextLabel):
+        boxes.append(label_box(tip, scale))                        # el texto del pico no es una primitiva con cota propia
     return union_bounds(boxes)
 
 

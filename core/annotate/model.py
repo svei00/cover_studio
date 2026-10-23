@@ -15,7 +15,10 @@ from core.annotate.style import (
     DEFAULT_GLOW_SIZE,
     DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
+    BRACKET_LABEL_SIZE,
+    BRACKET_WIDTH,
     DEFAULT_CURVE_BEND,
+    DEFAULT_TIP_ICON_SIZE,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
@@ -102,6 +105,19 @@ class ConnectorRoute(str, Enum):
     CURVE = "curve"         # un arco (solo flechas y lineas; la lupa lo trata como recto)
 
 
+class BracketKind(str, Enum):
+    BRACE = "brace"            # llave { }
+    SQUARE = "square"          # corchete [ ]
+    PAREN = "paren"            # parentesis ( )
+    DIMENSION = "dimension"    # cota |<->|: lineas de extension y una linea con puntas; sin texto propio muestra su medida
+
+
+class TipContent(str, Enum):
+    NONE = "none"
+    TEXT = "text"
+    ICON = "icon"
+
+
 class ArrowBody(str, Enum):
     UNIFORM = "uniform"     # grosor parejo de la cola a la punta (la flecha de siempre)
     TAPERED = "tapered"     # conico: delgado en la cola y grueso cerca de la punta
@@ -186,6 +202,32 @@ class Arrow:
     curve_bend: float = DEFAULT_CURVE_BEND            # en ruta CURVE: desvio del arco (-1..1 del largo; el signo elige el lado)
     shadow: bool = False                              # sombra suave debajo (distinta del resplandor)
     shadow_strength: float = 1.0                      # multiplica la opacidad de la sombra
+
+
+@dataclass(frozen=True)
+class Bracket:
+    """Llave, corchete, parentesis o cota: abarca el tramo de `start` a `end` (como una flecha) con un pico a `depth` px hacia un lado u
+    otro (`flip`), para senalar varias cosas a la vez. En el pico lleva, opcionalmente, un texto ("Total", "Error", "Paso 1"...) o un
+    icono (`tip`); el texto se conserva aunque se apague. Geometria en `core/annotate/bracket.py`."""
+
+    id: str
+    start: tuple[float, float]
+    end: tuple[float, float]
+    kind: BracketKind = BracketKind.BRACE
+    depth: float = 28.0
+    flip: bool = False
+    color: str | None = None
+    width: float = BRACKET_WIDTH
+    glow: bool = True
+    glow_color: str | None = None
+    glow_strength: float = DEFAULT_GLOW_STRENGTH
+    glow_size: float = DEFAULT_GLOW_SIZE
+    tip: TipContent = TipContent.NONE
+    label: str = ""                         # texto del pico; en una cota vacio = su medida
+    label_preset: str = "nota"              # uno de TEXT_PRESETS: el estilo de la etiqueta
+    label_size: float = BRACKET_LABEL_SIZE
+    tip_icon: IconKind = IconKind.CHECK
+    tip_icon_size: float = DEFAULT_TIP_ICON_SIZE
 
 
 @dataclass(frozen=True)
@@ -368,7 +410,7 @@ class Stroke:
     glow_size: float = DEFAULT_GLOW_SIZE
 
 
-Annotation = Marker | Arrow | StepBadge | Icon | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight | ImageOverlay
+Annotation = Marker | Arrow | StepBadge | Icon | TextLabel | Redaction | Magnifier | Highlight | Stroke | Spotlight | ImageOverlay | Bracket
 
 
 @dataclass

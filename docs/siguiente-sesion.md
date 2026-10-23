@@ -7,7 +7,7 @@ anterior estaba desactualizado; todo su backlog esta HECHO.)
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1629 tests pasan.** Ultimo commit al escribir esto: `ed7d41a` (la sesion WEB, autor "Claude", 28-oct: asa del tramo
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1708 tests pasan.** Ultimo commit al escribir esto: `ed7d41a` (la sesion WEB, autor "Claude", 28-oct: asa del tramo
 medio de la flecha en Z); antes `0a0387f` y `03a0818` (codo L/Z y edicion de varias a la vez), `ea95a43` (lienzo en blanco),
 `2916375` (menu de clic derecho), `77736a0` (pegar encima), `01951c6` (Escalar + colores de marca). La sombra en el margen extra
 (seccion 3.1f) esta hecha y SIN commitear al escribir esto.
@@ -120,7 +120,7 @@ commiteadas (`77736a0`, `2916375`, `ea95a43`).
 Ver `docs/arquitectura-anotar.md` ("Pegar encima: marco del margen extra"). Tests: `tests/test_annotate_overlay_frame.py`. Con "Margen
 extra" la sombra y lo que cuelga de una imagen pegada se ven (pantalla y exportacion); sin margen se recortan en el borde como antes.
 
-### 3.1g Flecha dinamica (estilo ShareX) + familia "llave": DECIDIDO con el usuario (2026-11-05), SIN HACER
+### 3.1g Flecha dinamica (estilo ShareX) + familia "llave": HECHAS LAS DOS FASES
 El usuario quiere la flecha mas dinamica, como la de ShareX (y no la fina de Lightshot), y una herramienta de llave que aproveche el mismo
 diseno. **Marco los 4 rasgos de la flecha y 3 extras de la llave.** Hoy `Arrow` = linea de grosor parejo + punta triangular rellena o punto,
 rayas, resplandor y codo L/Z (`route`, `elbow_z`, `elbow_split`). No se vio una captura de la flecha de ShareX: si el usuario la pasa, copiarla.
@@ -135,15 +135,11 @@ rayas, resplandor y codo L/Z (`route`, `elbow_z`, `elbow_split`). No se vio una 
 - Propuesta: nuevo campo de estilo (clasica / dinamica); la herramienta Flecha crea por defecto la DINAMICA y Linea y la flecha del Marcador
   se quedan como estan. Confirmar con el usuario si prefiere otro default.
 
-**B. Llave y familia** (anotacion nueva `Bracket(id, start, end, kind, depth, flip, color, width, glow..., tip)`; `kind` = LLAVE `{ }`,
-CORCHETE `[ ]`, PARENTESIS `( )` o COTA `|<->|`; dibujada con curvas Bezier aplanadas en una `PPolyline`, el mismo patron del lapiz; dos extremos
-con asas como la Flecha, el pico de un lado u otro (`flip`) a `depth` px del tramo, funciona en cualquier angulo):
-- **Etiqueta en el pico** que se puede APAGAR (casilla): "Total", "Error", "Paso 1"... con un selector de textos rapidos mas texto libre.
-- **Un "spot" libre en el pico** para "alguna otra cosa que se me ocurra": modelarlo como contenido del pico = NADA / TEXTO / ICONO (reusa
-  `IconKind`), dejando la puerta abierta a otros (sticker, imagen). En la COTA el texto es la medida.
-- Orden sugerido: 1) flecha (A) HECHA; 2) llave base con corchete y parentesis; 3) etiqueta + spot + cota. Reusar de A: `curve_points` /
-  `PPolyline`, el patron de asas `Handle.MID` y `fill_opacity` para rellenos translucidos.
-- Sonnet basta (la geometria la define este documento); ver las trampas de "anotaciones nuevas tocan siempre los mismos sitios".
+**B. Llave y familia: HECHA (2026-10-23, sin commitear al escribir esto; ver `docs/arquitectura-anotar.md`, "Llave, corchete, parentesis y cota")**.
+Una sola herramienta "Llave" (`Bracket`, `BracketKind` = llave, corchete, parentesis, cota) con pico a `depth` px hacia un lado (`flip`) y asa
+en el pico; contenido del pico `TipContent` = NADA / TEXTO (textos rapidos Total, Error, Paso 1... o propio, con estilo y tamano) / ICONO (el
+"spot" libre); en la cota un texto vacio muestra su medida. Pendiente de esta familia (no pedido): color propio del texto del pico, rayas en el
+trazo, otros contenidos del pico (sticker, imagen).
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)
 - Escalado fase 2 (IA, Real-ESRGAN ncnn externo): no recomendado; ver arriba.
@@ -205,7 +201,7 @@ byte-identico. El usuario decide cuando; no la empieces sin preguntar.
 
 > Continuamos Cover Studio en `D:\repos\cover_studio`. Lee primero `docs/siguiente-sesion.md` (estado,
 > preferencias, trampas y pendiente) y luego la seccion relevante de `docs/arquitectura-anotar.md`. Corre
-> `git status`, `git log --oneline -8` y la suite de tests. Lo siguiente es la seccion 3.1g: la flecha dinamica estilo ShareX y la
-> familia de llave (herramienta nueva de Anotar). Confirma conmigo lo que esta marcado como pendiente de confirmar, dime tu plan en pocas lineas y espera mi
+> `git status`, `git log --oneline -8` y la suite de tests. Lo ultimo fue la seccion 3.1g (flecha dinamica y familia de llave): HECHO. Pregunta
+> que sigue; confirma conmigo lo que este marcado como pendiente, dime tu plan en pocas lineas y espera mi
 > visto bueno antes de escribir codigo. Trabaja en fases chicas, con tests y verificacion visual en la ventana
 > real, y dame los comandos de commit (sin Co-Authored-By); despues de que commitee, verifica con git.

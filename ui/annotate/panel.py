@@ -32,6 +32,8 @@ from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
 from core.annotate.model import (
     Arrow,
     ArrowBody,
+    Bracket,
+    BracketKind,
     ArrowSide,
     ConnectorRoute,
     HeadStyle,
@@ -53,6 +55,7 @@ from core.annotate.model import (
     Stroke,
     TextAlign,
     TextLabel,
+    TipContent,
 )
 from core.annotate import overlay as overlay_geometry
 from core.annotate.layers import Order
@@ -75,10 +78,20 @@ from core.annotate.style import (
 from core.annotate.style import (
     CARD_FILL,
     FOCUS_DIM,
+    BRACKET_LABEL_SIZE,
+    BRACKET_QUICK_TEXTS,
+    BRACKET_WIDTH,
     DEFAULT_CURVE_BEND,
+    DEFAULT_TIP_ICON_SIZE,
     DYNAMIC_ARROW_WIDTH,
     DYNAMIC_HEAD_SIZE,
     MAX_ARROW_SHADOW,
+    MAX_BRACKET_DEPTH,
+    MAX_LABEL_SIZE,
+    MAX_TIP_ICON_SIZE,
+    MIN_BRACKET_DEPTH,
+    MIN_LABEL_SIZE,
+    MIN_TIP_ICON_SIZE,
     MAX_CURVE_BEND,
     MAX_FOCUS_BLUR,
     MAX_HEAD_SIZE,
@@ -120,6 +133,7 @@ from core.annotate.style import (
     STEP_STROKE,
     TEXT_PRESETS,
 )
+from core.annotate import bracket as bracket_geometry
 from ui.annotate.controller import DEFAULT_REDACTION_BLOCK, EditController, Tool
 from core.annotate.align import Align, Distribute
 from ui.annotate.align_icons import align_icon, distribute_icon
@@ -144,6 +158,14 @@ LINE_STYLE_LABELS = {
 CONNECTOR_ROUTE_LABELS = {ConnectorRoute.STRAIGHT: "Recto", ConnectorRoute.ELBOW: "Con codo"}
 ARROW_ROUTE_LABELS = {**CONNECTOR_ROUTE_LABELS, ConnectorRoute.CURVE: "Curvo"}   # la lupa no tiene curva
 BODY_LABELS = {ArrowBody.UNIFORM: "Parejo", ArrowBody.TAPERED: "Conico"}
+BRACKET_KIND_LABELS = {
+    BracketKind.BRACE: "Llave { }", BracketKind.SQUARE: "Corchete [ ]", BracketKind.PAREN: "Parentesis ( )",
+    BracketKind.DIMENSION: "Cota |<->|",
+}
+BRACKET_TITLES = {
+    BracketKind.BRACE: "Llave", BracketKind.SQUARE: "Corchete", BracketKind.PAREN: "Parentesis", BracketKind.DIMENSION: "Cota",
+}
+TIP_LABELS = {TipContent.NONE: "Nada", TipContent.TEXT: "Texto", TipContent.ICON: "Icono"}
 ALIGN_TIPS = {
     Align.LEFT: "Alinear a la izquierda",
     Align.CENTER_H: "Centrar horizontalmente (centros en una misma vertical)",
@@ -188,7 +210,7 @@ PRESET_LABELS = {
 }
 
 (_PAGE_EMPTY, _PAGE_MARKER, _PAGE_ARROW, _PAGE_STEP, _PAGE_TEXT, _PAGE_REDACTION, _PAGE_LENS,
- _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON, _PAGE_MULTI, _PAGE_IMAGE) = range(14)
+ _PAGE_CROP, _PAGE_HIGHLIGHT, _PAGE_STROKE, _PAGE_FOCUS, _PAGE_ICON, _PAGE_MULTI, _PAGE_IMAGE, _PAGE_BRACKET) = range(15)
 
 
 RESET_TIP = "Doble clic para restablecer el valor por defecto"
@@ -281,6 +303,7 @@ class PropertiesPanel(QWidget):
         self._pages.addWidget(self._build_icon_page())
         self._pages.addWidget(self._build_multi_page())
         self._pages.addWidget(self._build_image_page())   # el orden DEBE coincidir con los indices _PAGE_*
+        self._pages.addWidget(self._build_bracket_page())
 
         # la pagina de la lupa es larga: el panel tiene scroll cuando la ventana es baja
         self._scroll = QScrollArea()
@@ -1055,6 +1078,89 @@ class PropertiesPanel(QWidget):
         form.addRow(note)
         return page
 
+    def _build_bracket_page(self) -> QWidget:
+        """Llave, corchete, parentesis y cota (`Bracket`): forma, lado y altura del pico, trazo, y lo que lleva en el pico."""
+        page = QWidget()
+        form = QFormLayout(page)
+        self._br_kind = QComboBox()
+        for kind, label in BRACKET_KIND_LABELS.items():
+            self._br_kind.addItem(label, kind.value)
+        self._br_kind.currentIndexChanged.connect(lambda _i: self._on_bracket_kind_changed())
+        self._field_row(form, "Forma", self._br_kind, "kind", BracketKind.BRACE)
+        self._br_depth = QDoubleSpinBox()
+        self._br_depth.setRange(MIN_BRACKET_DEPTH, MAX_BRACKET_DEPTH)
+        self._br_depth.setDecimals(0)
+        self._br_depth.setSuffix(" px")
+        self._br_depth.setToolTip("Altura del pico respecto al tramo. Tambien se arrastra el asa del pico")
+        self._br_depth.valueChanged.connect(lambda v: self._apply(depth=float(v)))
+        self._field_row(form, "Profundidad", self._br_depth, "depth", self._bracket_default_depth)
+        self._br_flip = QCheckBox("Invertir lado")
+        self._br_flip.setToolTip("El pico pasa al otro lado del tramo (tambien arrastrando su asa al otro lado)")
+        self._br_flip.toggled.connect(lambda on: self._apply(flip=on))
+        form.addRow(self._br_flip)
+        self._br_width = QDoubleSpinBox()
+        self._br_width.setRange(MIN_LINE_WIDTH, MAX_LINE_WIDTH)
+        self._br_width.setDecimals(1)
+        self._br_width.setSingleStep(0.5)
+        self._br_width.setSuffix(" px")
+        self._br_width.valueChanged.connect(lambda v: self._apply(width=float(v)))
+        self._field_row(form, "Grosor", self._br_width, "width", BRACKET_WIDTH)
+        self._br_color = self._color_row(form, "Color", "color")
+        self._br_glow = QCheckBox("Resplandor")
+        self._br_glow.toggled.connect(lambda on: self._apply(glow=on))
+        form.addRow(self._br_glow)
+        self._br_glow_color = self._color_row(form, "Resplandor", "glow_color")
+        *self._br_glow_spins, self._br_glow_rows = self._glow_rows(form)
+        # lo que lleva el pico: nada, un texto o un icono (el texto se conserva aunque se apague)
+        self._br_tip = QComboBox()
+        for tip, label in TIP_LABELS.items():
+            self._br_tip.addItem(label, tip.value)
+        self._br_tip.setToolTip("Lo que va junto al pico: un texto (Total, Error, Paso 1...), un icono, o nada")
+        self._br_tip.currentIndexChanged.connect(lambda _i: self._apply(tip=TipContent(self._br_tip.currentData())))
+        self._field_row(form, "En el pico", self._br_tip, "tip", TipContent.NONE)
+        self._br_label = QComboBox()
+        self._br_label.setEditable(True)
+        self._br_label.setInsertPolicy(QComboBox.NoInsert)
+        self._br_label.addItems(list(BRACKET_QUICK_TEXTS))
+        self._br_label.lineEdit().setPlaceholderText("Escribe o elige un texto")
+        self._br_label.setToolTip("Elige un texto rapido o escribe el tuyo. En una cota, vacio = su medida")
+        self._br_label.editTextChanged.connect(lambda text: self._apply(label=text))
+        self._br_label_row = self._field_row(form, "Texto", self._br_label, "label", "")
+        self._br_preset = QComboBox()
+        for key, label in PRESET_LABELS.items():
+            self._br_preset.addItem(label, key)
+        self._br_preset.currentIndexChanged.connect(lambda _i: self._apply(label_preset=self._br_preset.currentData()))
+        self._br_preset_row = self._field_row(form, "Estilo del texto", self._br_preset, "label_preset", "nota")
+        self._br_label_size = QSpinBox()
+        self._br_label_size.setRange(round(MIN_LABEL_SIZE), round(MAX_LABEL_SIZE))
+        self._br_label_size.setSuffix(" px")
+        self._br_label_size.valueChanged.connect(lambda v: self._apply(label_size=float(v)))
+        self._br_label_size_row = self._field_row(form, "Tamano del texto", self._br_label_size, "label_size", BRACKET_LABEL_SIZE)
+        self._br_icon = QComboBox()
+        for kind, label in ICON_LABELS.items():
+            self._br_icon.addItem(icon_for(kind), label, kind.value)
+        self._br_icon.currentIndexChanged.connect(lambda _i: self._apply(tip_icon=IconKind(self._br_icon.currentData())))
+        self._br_icon_row = self._field_row(form, "Icono", self._br_icon, "tip_icon", IconKind.CHECK)
+        self._br_icon_size = QSpinBox()
+        self._br_icon_size.setRange(round(MIN_TIP_ICON_SIZE), round(MAX_TIP_ICON_SIZE))
+        self._br_icon_size.setSuffix(" px")
+        self._br_icon_size.valueChanged.connect(lambda v: self._apply(tip_icon_size=float(v)))
+        self._br_icon_size_row = self._field_row(form, "Tamano del icono", self._br_icon_size, "tip_icon_size", DEFAULT_TIP_ICON_SIZE)
+        self._br_form = form
+        return page
+
+    def _bracket_default_depth(self) -> float:
+        item = self._c.selected_item()
+        return bracket_geometry.default_depth(item.start, item.end) if isinstance(item, Bracket) else 28.0
+
+    def _on_bracket_kind_changed(self) -> None:
+        """Cambiar la forma de una llave tambien la deja como la de las nuevas."""
+        if self._syncing:
+            return
+        kind = BracketKind(self._br_kind.currentData())
+        self._c.bracket_kind = kind
+        self._apply(kind=kind)
+
     def _build_image_page(self) -> QWidget:
         """Imagen pegada encima de la captura (Ctrl+Shift+V)."""
         page = QWidget()
@@ -1467,6 +1573,31 @@ class PropertiesPanel(QWidget):
                     self._hl_opacity.setValue(round(item.opacity * 100))
                 if abs(self._hl_radius.value() - item.radius) > 1e-9:
                     self._hl_radius.setValue(item.radius)
+            elif isinstance(item, Bracket):
+                self._pages.setCurrentIndex(_PAGE_BRACKET)
+                self._title.setText(BRACKET_TITLES[item.kind])
+                self._set_combo(self._br_kind, item.kind.value)
+                self._set_spin(self._br_depth, item.depth)
+                self._br_flip.setChecked(item.flip)
+                self._set_spin(self._br_width, item.width)
+                self._br_color.set_value(item.color or pal.arrow, item.color is not None)
+                self._br_glow.setChecked(item.glow)
+                self._br_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
+                self._sync_glow_rows(self._br_form, self._br_glow_spins, self._br_glow_rows, item, item.glow)
+                self._set_combo(self._br_tip, item.tip.value)
+                if self._br_label.currentText() != item.label:
+                    self._br_label.setEditText(item.label)
+                self._set_combo(self._br_preset, item.label_preset)
+                if self._br_label_size.value() != round(item.label_size):
+                    self._br_label_size.setValue(round(item.label_size))
+                self._set_combo(self._br_icon, item.tip_icon.value)
+                if self._br_icon_size.value() != round(item.tip_icon_size):
+                    self._br_icon_size.setValue(round(item.tip_icon_size))
+                is_text, is_icon = item.tip is TipContent.TEXT, item.tip is TipContent.ICON
+                for row in (self._br_label_row, self._br_preset_row, self._br_label_size_row):
+                    self._br_form.setRowVisible(row, is_text)
+                for row in (self._br_icon_row, self._br_icon_size_row):
+                    self._br_form.setRowVisible(row, is_icon)
             elif isinstance(item, ImageOverlay):
                 self._pages.setCurrentIndex(_PAGE_IMAGE)
                 self._title.setText("Imagen pegada")

@@ -11,10 +11,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from enum import Enum
 
+from core.annotate import bracket as bracket_geometry
 from core.annotate import freehand, lens, style
 from core.annotate.model import (
     Annotation,
     Arrow,
+    Bracket,
     ConnectorRoute,
     Highlight,
     Icon,
@@ -29,7 +31,7 @@ from core.annotate.model import (
     Stroke,
     TextLabel,
 )
-from core.annotate.primitives import arrow_path, curve_apex, label_box, step_extent, stroke_curve
+from core.annotate.primitives import arrow_path, bracket_tip_item, curve_apex, label_box, step_extent, stroke_curve
 
 Point = tuple[float, float]
 
@@ -133,6 +135,16 @@ def hit_item(
     if isinstance(item, Arrow):
         path = arrow_path(item)
         return any(distance_to_segment(p, a, b) <= tol for a, b in zip(path, path[1:]))
+    if isinstance(item, Bracket):
+        reach = tol + item.width * scale / 2
+        if any(distance_to_segment(p, a, b) <= reach for path in bracket_geometry.outline_paths(item) for a, b in zip(path, path[1:])):
+            return True
+        tip = bracket_tip_item(item, scale)                       # tambien se selecciona por su texto o su icono
+        if isinstance(tip, TextLabel):
+            return _contains(label_box(tip, scale).inflate(tol / 2), p)
+        if isinstance(tip, Icon):
+            return math.hypot(p[0] - tip.center[0], p[1] - tip.center[1]) <= tip.size * scale + tol
+        return False
     if isinstance(item, StepBadge):
         dx, dy = abs(p[0] - item.center[0]), abs(p[1] - item.center[1])
         reach = step_extent(item, scale) + tol / 2
@@ -216,6 +228,12 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
                 del handles[handle]
             handles[Handle.CONN_START], handles[Handle.CONN_END] = anchors
         return handles
+    if isinstance(item, Bracket):
+        handles = {Handle.START: item.start, Handle.END: item.end}
+        tip = bracket_geometry.tip_point(item)
+        if tip is not None:
+            handles[Handle.MID] = tip                                 # el pico: arrastrarlo cambia la profundidad y el lado
+        return handles
     if isinstance(item, Arrow):
         handles = {Handle.START: item.start, Handle.END: item.end}
         mid = z_middle_handle(item) or curve_middle_handle(item)
@@ -265,6 +283,15 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
         return _stroke_box(item).inflate(item.width * scale / 2) if item.points else Rect(0, 0, 0, 0)
     if isinstance(item, (Marker, Redaction, Highlight, Spotlight, ImageOverlay)):
         return item.rect
+    if isinstance(item, Bracket):
+        boxes = [Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+                 for xs, ys in (zip(*path) for path in bracket_geometry.outline_paths(item))]
+        if isinstance(tip := bracket_tip_item(item, scale), TextLabel):
+            boxes.append(label_box(tip, scale))
+        if not boxes:
+            return Rect(item.start[0], item.start[1], 0.0, 0.0)
+        x0, y0 = min(b.x for b in boxes), min(b.y for b in boxes)
+        return Rect(x0, y0, max(b.right for b in boxes) - x0, max(b.bottom for b in boxes) - y0)
     if isinstance(item, Arrow):
         xs, ys = zip(*arrow_path(item))   # el recorrido, no solo los extremos: un arco se sale de la caja de inicio y fin
         return Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
@@ -345,7 +372,7 @@ def move_item(
         return replace(item, rect=Rect(r.x + dx, r.y + dy, r.w, r.h))
     if isinstance(item, Stroke):
         return replace(item, points=tuple((x + dx, y + dy) for x, y in item.points))
-    if isinstance(item, Arrow):
+    if isinstance(item, (Arrow, Bracket)):
         return replace(
             item,
             start=(item.start[0] + dx, item.start[1] + dy),
@@ -376,6 +403,19 @@ def resize_item(
         else:
             tip = p
         return replace(item, arrow_start=start, arrow_tip=tip)
+    if isinstance(item, Bracket):
+        if handle is Handle.START:
+            return replace(item, start=p)
+        if handle is Handle.END:
+            return replace(item, end=p)
+        if handle is Handle.MID and bracket_geometry.tip_point(item) is not None:
+            # el pico sigue al mouse: su distancia al tramo (en la normal) es la profundidad y su signo, el lado
+            _u, n, length = bracket_geometry.span(item)
+            mid = ((item.start[0] + item.end[0]) / 2, (item.start[1] + item.end[1]) / 2)
+            along = (p[0] - mid[0]) * n[0] + (p[1] - mid[1]) * n[1]
+            depth = min(style.MAX_BRACKET_DEPTH, max(style.MIN_BRACKET_DEPTH, abs(along)))
+            return replace(item, depth=depth, flip=along < 0)
+        return item
     if isinstance(item, Arrow):
         if handle is Handle.START:
             return replace(item, start=p)
