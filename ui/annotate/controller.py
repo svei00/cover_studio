@@ -27,6 +27,7 @@ from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
+    ArrowBody,
     ArrowSide,
     Highlight,
     HeadStyle,
@@ -46,7 +47,7 @@ from core.annotate.model import (
 )
 from core.annotate.palette import Palette
 from core.annotate.primitives import doc_scale, item_bounds, marker_arrow
-from core.annotate.style import PEN_MARKER_WIDTH
+from core.annotate.style import DYNAMIC_ARROW_WIDTH, DYNAMIC_HEAD_SIZE, PEN_MARKER_WIDTH
 
 Point = tuple[float, float]
 
@@ -603,7 +604,9 @@ class EditController(QObject):
             item = Stroke(item_id, (p,), mode=PenMode.MARKER, width=PEN_MARKER_WIDTH)
             self._stroke_raw = [p]
         else:
-            item = Arrow(item_id, p, p)
+            # la herramienta Flecha crea la DINAMICA (cuerpo conico, punta grande, sombra suave); Linea y la flecha del Marcador no
+            item = Arrow(item_id, p, p, body=ArrowBody.TAPERED, width=DYNAMIC_ARROW_WIDTH,
+                         head_size=DYNAMIC_HEAD_SIZE, shadow=True)
         self._insert(item)
         self._mode, self._orig, self._anchor = "create", item, p
         self.select(item_id)

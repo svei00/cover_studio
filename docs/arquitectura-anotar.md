@@ -855,3 +855,34 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - **Ojo (privacidad)**: la parte de una imagen pegada que cuelga hacia el margen NO se puede pixelar (un Pixelar se acota a la captura). Se ve
   en pantalla igual que sale, asi que se nota; si hay datos sensibles, hay que meter la imagen en la captura.
 
+### Flecha dinamica (estilo ShareX): cuerpo conico, curva, punta grande y sombra suave
+
+- **Que es**: la flecha de siempre (linea de grosor parejo con punta triangular) sigue existiendo; ahora `Arrow` tiene campos NUEVOS, todos
+  con valor por defecto = la flecha de hoy (un proyecto viejo abre identico): `body` (`ArrowBody.UNIFORM` / `TAPERED`), `head_size`
+  (multiplicador de la punta, 0.5 a 3), `route=ConnectorRoute.CURVE` + `curve_bend` (-1 a 1) y `shadow` + `shadow_strength`.
+- **La herramienta Flecha crea la DINAMICA** (cuerpo conico, grosor 7, punta x1.5, sombra); Linea y la flecha automatica del Marcador se
+  quedan como estaban (`style.DYNAMIC_ARROW_WIDTH`, `DYNAMIC_HEAD_SIZE`). El "restablecer" del grosor y de la punta vuelve al valor de
+  fabrica DEL CUERPO de esa flecha (`panel._arrow_factory`), y cambiar el cuerpo (un solo paso de deshacer) pasa grosor y punta al
+  valor del cuerpo nuevo SOLO si estaban en el de fabrica del anterior (si los habias cambiado, se respetan).
+- **Cuerpo conico**: `primitives.tapered_outline(ruta, grosor)` arma un POLIGONO por el camino (de `ARROW_TAIL_RATIO` = 18 % del grosor en la
+  cola al grosor completo en la punta, creciendo con lo recorrido; en las esquinas del codo el desplazamiento sigue el inglete acotado a
+  2x). Sin rayas (el selector de estilo se desactiva). El resplandor es el contorno ensanchado, como el de la punta.
+- **Curva**: Bezier cuadratica con punto de control a `curve_bend` veces el largo, en perpendicular al centro de la cuerda (`curve_control`,
+  `curve_points` la aplana ~1 punto cada 5 px). Como la curvatura es PROPORCIONAL al largo, mover un extremo no deforma el arco. Asa en el
+  medio del arco (`Handle.MID`, `edit.curve_middle_handle` = `curve_apex`); arrastrarla fija la curvatura (acotada a +-1, y a menos de
+  `CURVE_SNAP` de 0 queda recta). La seleccion y las cotas siguen el camino aplanado, y `selection_rect` usa el recorrido (no solo
+  inicio y fin). `ConnectorRoute.CURVE` es solo de las flechas: la lupa lo trata como recto y su panel no lo ofrece
+  (`ARROW_ROUTE_LABELS` vs `CONNECTOR_ROUTE_LABELS`).
+- **Punta**: tamano = `ARROW_HEAD * escala * f(grosor) * head_size`; en una curva mira la tangente al final.
+- **Sombra suave**: `_arrow_shadow` apila capas negras translucidas (6 anillos mas un nucleo, de la mas ancha al nucleo) desplazadas
+  `ARROW_SHADOW_DY` hacia abajo, SIN filtros, asi Qt y SVG coinciden pixel a pixel (igual que el resplandor). Va debajo de todo; cuenta
+  en `item_box` y en el margen necesario. Calibrada a ojo sobre fondo claro y oscuro (`ARROW_SHADOW_CORE`, `ARROW_SHADOW_RINGS`).
+- **`PPolygon.fill_opacity`** (nuevo, 1.0 por defecto): la opacidad de un poligono era solo la de su BORDE; el nucleo de la sombra necesita
+  un relleno translucido. Painter y SVG la respetan; con 1.0 el SVG no cambia. Un disco translucido (punta de punto) se dibuja como un
+  trazo grueso desde el centro porque `PCircle` tampoco tiene opacidad de relleno.
+- Panel de la flecha: Cuerpo (Parejo / Conico), Tamano de la punta, Trazado (Recto / Con codo / Curvo), Curvatura (solo en Curvo), Sombra
+  suave + Intensidad (solo con sombra), ademas de lo de antes. Tests: `tests/test_annotate_arrow_dynamic.py` (incluye paridad Qt contra
+  resvg de una flecha conica con sombra, una curva conica y una curva pareja).
+- No hecho: asa de arrastre para el grosor o la punta en el lienzo; que la flecha del Marcador sea dinamica; curva con dos asas (Bezier
+  cubica) para formas en S.
+

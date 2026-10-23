@@ -31,6 +31,7 @@ from core.annotate.bounds import items_outside_view, required_padding
 from core.annotate.lens import MAX_ZOOM, MIN_ZOOM, RECOMMENDED_MAX_ZOOM
 from core.annotate.model import (
     Arrow,
+    ArrowBody,
     ArrowSide,
     ConnectorRoute,
     HeadStyle,
@@ -74,7 +75,15 @@ from core.annotate.style import (
 from core.annotate.style import (
     CARD_FILL,
     FOCUS_DIM,
+    DEFAULT_CURVE_BEND,
+    DYNAMIC_ARROW_WIDTH,
+    DYNAMIC_HEAD_SIZE,
+    MAX_ARROW_SHADOW,
+    MAX_CURVE_BEND,
     MAX_FOCUS_BLUR,
+    MAX_HEAD_SIZE,
+    MIN_ARROW_SHADOW,
+    MIN_HEAD_SIZE,
     MAX_OVERLAY_CORNER,
     MAX_SHADOW_STRENGTH,
     MIN_SHADOW_STRENGTH,
@@ -133,6 +142,8 @@ LINE_STYLE_LABELS = {
     LineStyle.DASH_DOT: "Raya y punto",
 }
 CONNECTOR_ROUTE_LABELS = {ConnectorRoute.STRAIGHT: "Recto", ConnectorRoute.ELBOW: "Con codo"}
+ARROW_ROUTE_LABELS = {**CONNECTOR_ROUTE_LABELS, ConnectorRoute.CURVE: "Curvo"}   # la lupa no tiene curva
+BODY_LABELS = {ArrowBody.UNIFORM: "Parejo", ArrowBody.TAPERED: "Conico"}
 ALIGN_TIPS = {
     Align.LEFT: "Alinear a la izquierda",
     Align.CENTER_H: "Centrar horizontalmente (centros en una misma vertical)",
@@ -695,6 +706,11 @@ class PropertiesPanel(QWidget):
         self._field_row(form, "Punta inicial", self._arrow_head_start, "head_start", HeadStyle.NONE)
         self._arrow_head_end = self._head_combo("head_end")
         self._field_row(form, "Punta final", self._arrow_head_end, "head_end", HeadStyle.ARROW)
+        self._arrow_body = QComboBox()
+        for body, label in BODY_LABELS.items():
+            self._arrow_body.addItem(label, body.value)
+        self._arrow_body.currentIndexChanged.connect(lambda _i: self._on_arrow_body_changed())
+        self._field_row(form, "Cuerpo", self._arrow_body, "body", ArrowBody.UNIFORM)
         self._arrow_style = QComboBox()
         for line_style, label in LINE_STYLE_LABELS.items():
             self._arrow_style.addItem(label, line_style.value)
@@ -708,13 +724,27 @@ class PropertiesPanel(QWidget):
         self._arrow_width.setSingleStep(0.5)
         self._arrow_width.setSuffix(" px")
         self._arrow_width.valueChanged.connect(lambda v: self._apply(width=float(v)))
-        self._field_row(form, "Grosor", self._arrow_width, "width", MARKER_STROKE)
+        self._field_row(form, "Grosor", self._arrow_width, "width", lambda: self._arrow_factory("width"))
+        self._arrow_head_size = QSpinBox()
+        self._arrow_head_size.setRange(round(MIN_HEAD_SIZE * 100), round(MAX_HEAD_SIZE * 100))
+        self._arrow_head_size.setSingleStep(10)
+        self._arrow_head_size.setSuffix(" %")
+        self._arrow_head_size.setToolTip("Tamano de la punta (100 % = el de siempre para este grosor)")
+        self._arrow_head_size.valueChanged.connect(lambda v: self._apply(head_size=v / 100))
+        self._field_row(form, "Tamano de la punta", self._arrow_head_size, "head_size", lambda: self._arrow_factory("head_size"))
         self._arrow_route = QComboBox()
-        for route, label in CONNECTOR_ROUTE_LABELS.items():
+        for route, label in ARROW_ROUTE_LABELS.items():
             self._arrow_route.addItem(label, route.value)
         self._arrow_route.currentIndexChanged.connect(
             lambda _i: self._apply(route=ConnectorRoute(self._arrow_route.currentData())))
         self._field_row(form, "Trazado", self._arrow_route, "route", ConnectorRoute.STRAIGHT)
+        self._arrow_bend = QSpinBox()
+        self._arrow_bend.setRange(-round(MAX_CURVE_BEND * 100), round(MAX_CURVE_BEND * 100))
+        self._arrow_bend.setSingleStep(5)
+        self._arrow_bend.setSuffix(" %")
+        self._arrow_bend.setToolTip("Cuanto se dobla el arco (el signo elige el lado). Tambien se arrastra el asa del medio")
+        self._arrow_bend.valueChanged.connect(lambda v: self._apply(curve_bend=v / 100))
+        self._arrow_bend_row = self._field_row(form, "Curvatura", self._arrow_bend, "curve_bend", DEFAULT_CURVE_BEND)
         self._arrow_shape = QComboBox()
         self._arrow_shape.addItem("L (una esquina)", "l")
         self._arrow_shape.addItem("Z (dos esquinas)", "z")
@@ -731,6 +761,17 @@ class PropertiesPanel(QWidget):
             "Por defecto el codo sale en horizontal; esto lo invierte (en la Z, el tramo del medio pasa a ser horizontal)")
         self._arrow_vertical_first.toggled.connect(lambda on: self._apply(elbow_vertical_first=on))
         form.addRow(self._arrow_vertical_first)
+        self._arrow_shadow = QCheckBox("Sombra suave")
+        self._arrow_shadow.setToolTip("Una sombra tenue debajo (distinta del resplandor) para que la flecha parezca flotar")
+        self._arrow_shadow.toggled.connect(lambda on: self._apply(shadow=on))
+        form.addRow(self._arrow_shadow)
+        self._arrow_shadow_strength = QSpinBox()
+        self._arrow_shadow_strength.setRange(round(MIN_ARROW_SHADOW * 100), round(MAX_ARROW_SHADOW * 100))
+        self._arrow_shadow_strength.setSingleStep(10)
+        self._arrow_shadow_strength.setSuffix(" %")
+        self._arrow_shadow_strength.valueChanged.connect(lambda v: self._apply(shadow_strength=v / 100))
+        self._arrow_shadow_row = self._field_row(
+            form, "Intensidad de la sombra", self._arrow_shadow_strength, "shadow_strength", 1.0)
         self._arrow_glow = QCheckBox("Resplandor")
         self._arrow_glow.toggled.connect(lambda on: self._apply(glow=on))
         form.addRow(self._arrow_glow)
@@ -739,6 +780,33 @@ class PropertiesPanel(QWidget):
         *self._arrow_glow_spins, self._arrow_glow_rows = self._glow_rows(form)
         self._arrow_form = form
         return page
+
+    @staticmethod
+    def _arrow_factory_for(body: ArrowBody, field: str) -> float:
+        """Valor de fabrica del grosor o de la punta segun el CUERPO: la flecha conica (la dinamica) es mas gruesa y de punta mas
+        grande que la parejo de siempre, asi que 'restablecer' vuelve al de su tipo."""
+        dynamic = body is ArrowBody.TAPERED
+        if field == "width":
+            return DYNAMIC_ARROW_WIDTH if dynamic else MARKER_STROKE
+        return DYNAMIC_HEAD_SIZE if dynamic else 1.0
+
+    def _arrow_factory(self, field: str) -> float:
+        item = self._c.selected_item()
+        return self._arrow_factory_for(item.body if isinstance(item, Arrow) else ArrowBody.UNIFORM, field)
+
+    def _on_arrow_body_changed(self) -> None:
+        """Cambiar el cuerpo es UN paso de deshacer: si el grosor y la punta estaban en el valor de fabrica del cuerpo anterior pasan
+        al del nuevo (una flecha parejo de 5 px que se vuelve conica queda de 7 px y punta grande); si ya los habias cambiado a mano,
+        se respetan."""
+        item = self._c.selected_item()
+        if self._syncing or not isinstance(item, Arrow):
+            return
+        body = ArrowBody(self._arrow_body.currentData())
+        changes: dict = {"body": body}
+        for field in ("width", "head_size"):
+            if getattr(item, field) == self._arrow_factory_for(item.body, field):
+                changes[field] = self._arrow_factory_for(body, field)
+        self._c.edit_selected(_merge=False, **changes)
 
     def _head_combo(self, field: str) -> QComboBox:
         combo = QComboBox()
@@ -1256,7 +1324,18 @@ class PropertiesPanel(QWidget):
                 self._set_combo(self._arrow_head_start, item.head_start.value)
                 self._set_combo(self._arrow_head_end, item.head_end.value)
                 self._set_combo(self._arrow_style, item.line_style.value)
+                self._arrow_style.setEnabled(item.body is ArrowBody.UNIFORM)   # un cuerpo conico no lleva rayas
+                self._set_combo(self._arrow_body, item.body.value)
                 self._set_combo(self._arrow_route, item.route.value)
+                if self._arrow_head_size.value() != round(item.head_size * 100):
+                    self._arrow_head_size.setValue(round(item.head_size * 100))
+                if self._arrow_bend.value() != round(item.curve_bend * 100):
+                    self._arrow_bend.setValue(round(item.curve_bend * 100))
+                self._arrow_form.setRowVisible(self._arrow_bend_row, item.route is ConnectorRoute.CURVE)
+                self._arrow_shadow.setChecked(item.shadow)
+                if self._arrow_shadow_strength.value() != round(item.shadow_strength * 100):
+                    self._arrow_shadow_strength.setValue(round(item.shadow_strength * 100))
+                self._arrow_form.setRowVisible(self._arrow_shadow_row, item.shadow)
                 self._arrow_vertical_first.setChecked(item.elbow_vertical_first)
                 elbow = item.route is ConnectorRoute.ELBOW
                 self._set_combo(self._arrow_shape, "z" if item.elbow_z else "l")

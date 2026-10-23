@@ -15,6 +15,7 @@ from core.annotate.style import (
     DEFAULT_GLOW_SIZE,
     DEFAULT_GLOW_STRENGTH,
     DEFAULT_LENS_CORNER,
+    DEFAULT_CURVE_BEND,
     DEFAULT_LENS_FRAME_WIDTH,
     HIGHLIGHT_MARKER_OPACITY,
     HIGHLIGHT_RADIUS,
@@ -98,6 +99,12 @@ class IconStyle(str, Enum):
 class ConnectorRoute(str, Enum):
     STRAIGHT = "straight"   # una recta entre los dos extremos
     ELBOW = "elbow"         # tramos horizontales y verticales (con uno o dos codos en angulo recto)
+    CURVE = "curve"         # un arco (solo flechas y lineas; la lupa lo trata como recto)
+
+
+class ArrowBody(str, Enum):
+    UNIFORM = "uniform"     # grosor parejo de la cola a la punta (la flecha de siempre)
+    TAPERED = "tapered"     # conico: delgado en la cola y grueso cerca de la punta
 
 
 @dataclass(frozen=True)
@@ -174,6 +181,11 @@ class Arrow:
     elbow_vertical_first: bool = False                # en codo, sale en vertical (si no, en horizontal)
     elbow_z: bool = False                             # en codo: dos esquinas (Z) en vez de una (L); sale y llega en el mismo eje
     elbow_split: float = 0.5                          # en Z: donde queda el tramo del medio, 0..1 del recorrido (0.5 = a la mitad)
+    body: ArrowBody = ArrowBody.UNIFORM               # TAPERED: cuerpo conico (la flecha "dinamica"); `width` es su grosor maximo
+    head_size: float = 1.0                            # multiplicador del tamano de la punta
+    curve_bend: float = DEFAULT_CURVE_BEND            # en ruta CURVE: desvio del arco (-1..1 del largo; el signo elige el lado)
+    shadow: bool = False                              # sombra suave debajo (distinta del resplandor)
+    shadow_strength: float = 1.0                      # multiplica la opacidad de la sombra
 
 
 @dataclass(frozen=True)

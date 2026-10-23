@@ -15,6 +15,7 @@ from core.annotate.model import (
     Annotation,
     AnnotationDoc,
     Arrow,
+    ArrowBody,
     ArrowSide,
     ConnectorRoute,
     Highlight,
@@ -66,11 +67,14 @@ class PLine:
 
 @dataclass(frozen=True)
 class PPolygon:
+    """`opacity` es la del borde; `fill_opacity`, la del relleno (1 = opaco, como siempre)."""
+
     points: tuple[Point, ...]
     fill: str | None
     stroke: str | None
     width: float = 0.0
     opacity: float = 1.0
+    fill_opacity: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -181,9 +185,73 @@ def _head_points(tip: Point, ux: float, uy: float, head: float) -> tuple[Point, 
     )
 
 
+def curve_control(start: Point, end: Point, bend: float) -> Point:
+    """Punto de control de la curva (Bezier cuadratica) de una flecha: el centro del tramo desplazado `bend` veces su largo
+    hacia un lado (el signo elige cual) en perpendicular."""
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    return ((start[0] + end[0]) / 2 - dy * bend, (start[1] + end[1]) / 2 + dx * bend)
+
+
+def curve_apex(start: Point, end: Point, bend: float) -> Point:
+    """El punto mas alejado de la curva respecto a la recta (su mitad): donde va el asa para doblarla."""
+    cx, cy = curve_control(start, end, bend)
+    mx, my = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2
+    return (mx + (cx - mx) / 2, my + (cy - my) / 2)
+
+
+def curve_points(start: Point, end: Point, bend: float) -> list[Point]:
+    """La curva aplanada en puntos (mas o menos uno cada 5 px, entre 12 y 80 tramos): la usan el dibujo, la seleccion y las cotas."""
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    steps = min(80, max(12, int(length / 5)))
+    cx, cy = curve_control(start, end, bend)
+    out = []
+    for i in range(steps + 1):
+        t = i / steps
+        u = 1 - t
+        out.append((u * u * start[0] + 2 * u * t * cx + t * t * end[0], u * u * start[1] + 2 * u * t * cy + t * t * end[1]))
+    return out
+
+
+def tapered_outline(route: Sequence[Point], width: float) -> tuple[Point, ...]:
+    """Contorno (poligono) de un cuerpo CONICO sobre `route`: de `ARROW_TAIL_RATIO * width` en la cola a `width` en la punta,
+    creciendo con lo recorrido. En las esquinas el desplazamiento sigue el inglete (acotado), asi un codo no se afina."""
+    pts: list[Point] = []
+    for p in route:
+        if not pts or p != pts[-1]:
+            pts.append(p)
+    if len(pts) < 2:
+        return ()
+    cum = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    total = cum[-1]
+    left: list[Point] = []
+    right: list[Point] = []
+    for i, (x, y) in enumerate(pts):
+        half = width / 2 * (style.ARROW_TAIL_RATIO + (1 - style.ARROW_TAIL_RATIO) * cum[i] / total)
+        n0 = (-_unit(pts[i - 1], pts[i])[1], _unit(pts[i - 1], pts[i])[0]) if i > 0 else None
+        n1 = (-_unit(pts[i], pts[i + 1])[1], _unit(pts[i], pts[i + 1])[0]) if i < len(pts) - 1 else None
+        if n0 is None or n1 is None:
+            nx, ny = n1 or n0
+        else:
+            mx, my = n0[0] + n1[0], n0[1] + n1[1]
+            ml = math.hypot(mx, my)
+            if ml < 1e-9:
+                nx, ny = n0
+            else:
+                mx, my = mx / ml, my / ml
+                k = 1 / max(0.5, mx * n0[0] + my * n0[1])      # inglete, acotado a 2x
+                nx, ny = mx * k, my * k
+        left.append((x + nx * half, y + ny * half))
+        right.append((x - nx * half, y - ny * half))
+    return tuple(left + right[::-1])
+
+
 def arrow_path(a: Arrow) -> list[Point]:
-    """Puntos por los que pasa una flecha o linea: recta (2 puntos) o con un codo en angulo recto (3). Si start y end
-    estan alineados el codo se reduce a la recta."""
+    """Puntos por los que pasa una flecha o linea: recta (2 puntos), con un codo en angulo recto (3 o 4) o curva (la Bezier
+    aplanada). Si start y end estan alineados el codo se reduce a la recta."""
+    if a.route is ConnectorRoute.CURVE and a.curve_bend != 0 and a.start != a.end:
+        return curve_points(a.start, a.end, a.curve_bend)
     if a.route is ConnectorRoute.ELBOW and a.elbow_z:   # Z: sale y llega en el mismo eje, con el tramo del medio en `elbow_split`
         (x1, y1), (x2, y2) = a.start, a.end
         if a.elbow_vertical_first:
@@ -218,9 +286,14 @@ def _line_parts(
     glow_strength: float = style.DEFAULT_GLOW_STRENGTH,
     glow_size: float = style.DEFAULT_GLOW_SIZE,
     path: Sequence[Point] | None = None,
+    body: ArrowBody = ArrowBody.UNIFORM,
+    head_size: float = 1.0,
+    shadow: bool = False,
+    shadow_strength: float = 1.0,
 ) -> list[Primitive]:
-    """Linea de a hacia b con puntas opcionales en cada extremo, con el resplandor debajo. `path` (de `arrow_path`) es el
-    camino de a a b cuando lleva codo; cada punta mira en la direccion del tramo en que termina el camino."""
+    """Linea de a hacia b con puntas opcionales en cada extremo, con la sombra y el resplandor debajo. `path` (de `arrow_path`)
+    es el camino de a a b cuando lleva codo o curva; cada punta mira en la direccion del tramo en que termina el camino. Con
+    `body=TAPERED` el cuerpo es un poligono conico (sin rayas) y `width` es su grosor maximo."""
     x1, y1 = a
     x2, y2 = b
     length = math.hypot(x2 - x1, y2 - y1)
@@ -228,7 +301,7 @@ def _line_parts(
         return []
     route = tuple(path) if path is not None and len(path) > 2 else (a, b)
     sw = width * scale
-    head = style.ARROW_HEAD * scale * min(3.0, max(0.5, width / style.MARKER_STROKE))   # la punta sigue al grosor
+    head = style.ARROW_HEAD * scale * min(3.0, max(0.5, width / style.MARKER_STROKE)) * head_size   # la punta sigue al grosor
     ux, uy = _unit(route[-2], route[-1])
     sx, sy = _unit(route[1], route[0])
     dash, cap = dash_pattern(line_style, sw)
@@ -236,9 +309,17 @@ def _line_parts(
     glow_opacity = min(1.0, style.ARROW_GLOW_OPACITY * glow_strength)
     heads = [(h, p, d) for h, p, d in ((head_end, b, (ux, uy)), (head_start, a, (sx, sy))) if h is not HeadStyle.NONE]
     parts: list[Primitive] = []
-    if glow:
-        parts.append(_connector_line(route, glow_color, sw + extra, glow_opacity, dash, cap))
-    parts.append(_connector_line(route, color, sw, 1.0, dash, cap))
+    outline = tapered_outline(route, sw) if body is ArrowBody.TAPERED else ()
+    if shadow:
+        parts.extend(_arrow_shadow(route, outline, sw, heads, head, dash, cap, scale, shadow_strength))
+    if outline:
+        if glow:
+            parts.append(PPolygon(outline, None, glow_color, extra, glow_opacity))
+        parts.append(PPolygon(outline, color, None))
+    else:
+        if glow:
+            parts.append(_connector_line(route, glow_color, sw + extra, glow_opacity, dash, cap))
+        parts.append(_connector_line(route, color, sw, 1.0, dash, cap))
     for kind, point, (dx, dy) in heads:
         if kind is HeadStyle.DOT:
             radius = max(sw * 1.2, head * 0.35)
@@ -251,6 +332,42 @@ def _line_parts(
                 parts.append(PPolygon(pts, None, glow_color, extra, glow_opacity))
             parts.append(PPolygon(pts, color, None))
     return parts
+
+
+def _arrow_shadow(
+    route: Sequence[Point], outline: Sequence[Point], sw: float, heads: Sequence, head: float,
+    dash: tuple[float, ...] | None, cap: str, scale: float, strength: float,
+) -> list[Primitive]:
+    """Sombra suave de una flecha: negro desplazado hacia abajo y 'desenfocado' con capas translucidas apiladas (de la mas ancha a
+    un nucleo), sin filtros: asi Qt y el SVG coinciden pixel a pixel, igual que el resplandor."""
+    black = "#000000"
+    dy = style.ARROW_SHADOW_DY * scale
+    shifted_route = tuple((x, y + dy) for x, y in route)
+    shifted_outline = tuple((x, y + dy) for x, y in outline)
+    layers = [(off * scale, op) for off, op in reversed(style.arrow_shadow_rings(strength))]
+    layers.append((0.0, style.arrow_shadow_core(strength)))      # el nucleo, ultimo (el mas oscuro)
+    out: list[Primitive] = []
+    for off, op in layers:
+        if shifted_outline:
+            out.append(_shadow_polygon(shifted_outline, black, off, op))
+        else:
+            out.append(_connector_line(shifted_route, black, sw + 2 * off, op, dash, cap))
+        for kind, point, (dx, dy_) in heads:
+            moved = (point[0], point[1] + dy)
+            if kind is HeadStyle.DOT:
+                radius = max(sw * 1.2, head * 0.35) + off
+                # un disco translucido: el PCircle solo tiene opacidad en el borde, asi que es un trazo grueso desde el centro
+                out.append(PCircle(moved, radius / 2, None, black, radius, opacity=op))
+            else:
+                out.append(_shadow_polygon(tuple((x, y + dy) for x, y in _head_points(point, dx, dy_, head)), black, off, op))
+    return out
+
+
+def _shadow_polygon(points: Sequence[Point], color: str, off: float, opacity: float) -> PPolygon:
+    """Una capa de la sombra: el nucleo (relleno translucido) o un anillo (solo borde translucido, `2 * off` de ancho)."""
+    if off == 0:
+        return PPolygon(tuple(points), color, None, 0.0, 1.0, opacity)
+    return PPolygon(tuple(points), None, color, 2 * off, opacity)
 
 
 def _arrow_parts(
@@ -376,6 +493,7 @@ def arrow_primitives(a: Arrow, scale: float, palette: Palette = BRAND_PALETTE) -
     return _line_parts(
         a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow,
         a.width, a.head_start, a.head_end, a.line_style, a.glow_strength, a.glow_size, arrow_path(a),
+        a.body, a.head_size, a.shadow, a.shadow_strength,
     )
 
 

@@ -268,7 +268,7 @@ def test_restablecer_estilo_grosor_y_puntas(tab):
         assert _reset_btn(control).isEnabled()
         _reset_btn(control).click()
     a = tab.controller.selected_item()
-    assert (a.line_style, a.width, a.head_end) == (LineStyle.SOLID, 5.0, HeadStyle.ARROW)
+    assert (a.line_style, a.width, a.head_end) == (LineStyle.SOLID, style.DYNAMIC_ARROW_WIDTH, HeadStyle.ARROW)   # el de la dinamica
 
 
 def test_la_linea_se_selecciona_se_mueve_y_se_exporta_con_su_estilo(tab, tmp_path):

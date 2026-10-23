@@ -7,7 +7,7 @@ anterior estaba desactualizado; todo su backlog esta HECHO.)
 ## 1. Que hay (estado al cerrar la sesion anterior)
 
 Cover Studio: app de escritorio PySide6 en `D:\repos\cover_studio` (Windows, Python 3.14, venv en
-`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1577 tests pasan.** Ultimo commit al escribir esto: `ed7d41a` (la sesion WEB, autor "Claude", 28-oct: asa del tramo
+`.venv`). Se abre con `run_cover_studio.bat` o `.vbs`. **1629 tests pasan.** Ultimo commit al escribir esto: `ed7d41a` (la sesion WEB, autor "Claude", 28-oct: asa del tramo
 medio de la flecha en Z); antes `0a0387f` y `03a0818` (codo L/Z y edicion de varias a la vez), `ea95a43` (lienzo en blanco),
 `2916375` (menu de clic derecho), `77736a0` (pegar encima), `01951c6` (Escalar + colores de marca). La sombra en el margen extra
 (seccion 3.1f) esta hecha y SIN commitear al escribir esto.
@@ -125,7 +125,7 @@ El usuario quiere la flecha mas dinamica, como la de ShareX (y no la fina de Lig
 diseno. **Marco los 4 rasgos de la flecha y 3 extras de la llave.** Hoy `Arrow` = linea de grosor parejo + punta triangular rellena o punto,
 rayas, resplandor y codo L/Z (`route`, `elbow_z`, `elbow_split`). No se vio una captura de la flecha de ShareX: si el usuario la pasa, copiarla.
 
-**A. Flecha dinamica** (campos NUEVOS con valor por defecto = la flecha de hoy; los proyectos viejos abren identicos):
+**A. Flecha dinamica: HECHA (2026-11-05, sin commitear al escribir esto; ver `docs/arquitectura-anotar.md`, "Flecha dinamica")** (campos NUEVOS con valor por defecto = la flecha de hoy; los proyectos viejos abren identicos). Lo de abajo es el diseno original:
 - **Conica**: cuerpo que va de delgado en la cola a grueso cerca de la punta (poligono relleno `PPolygon` por el camino, sin raya).
 - **Curva**: nueva ruta `ConnectorRoute.CURVE` (Bezier cuadratica con un punto de control; asa en el medio del lienzo como el asa de la Z).
   Excluyente con el codo (la ruta es una sola). Tolerancia de seleccion por distancia a la curva aplanada.
@@ -141,7 +141,8 @@ con asas como la Flecha, el pico de un lado u otro (`flip`) a `depth` px del tra
 - **Etiqueta en el pico** que se puede APAGAR (casilla): "Total", "Error", "Paso 1"... con un selector de textos rapidos mas texto libre.
 - **Un "spot" libre en el pico** para "alguna otra cosa que se me ocurra": modelarlo como contenido del pico = NADA / TEXTO / ICONO (reusa
   `IconKind`), dejando la puerta abierta a otros (sticker, imagen). En la COTA el texto es la medida.
-- Orden sugerido: 1) flecha (A), que es lo que mas se usa; 2) llave base con corchete y parentesis; 3) etiqueta + spot + cota.
+- Orden sugerido: 1) flecha (A) HECHA; 2) llave base con corchete y parentesis; 3) etiqueta + spot + cota. Reusar de A: `curve_points` /
+  `PPolyline`, el patron de asas `Handle.MID` y `fill_opacity` para rellenos translucidos.
 - Sonnet basta (la geometria la define este documento); ver las trampas de "anotaciones nuevas tocan siempre los mismos sitios".
 
 ### 3.2 Otros (no pedidos; solo si el usuario los retoma)

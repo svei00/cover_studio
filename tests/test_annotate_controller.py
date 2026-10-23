@@ -11,7 +11,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from core.annotate.model import AnnotationDoc, Arrow, Marker, Rect, Redaction, StepBadge, TextLabel
+from core.annotate.model import AnnotationDoc, Arrow, ArrowBody, Marker, Rect, Redaction, StepBadge, TextLabel
+from core.annotate.style import DYNAMIC_ARROW_WIDTH, DYNAMIC_HEAD_SIZE
 from ui.annotate.controller import EditController, Tool
 
 TOL = 6.0
@@ -66,7 +67,9 @@ def test_un_clic_sin_arrastrar_no_crea_nada_ni_ensucia_el_historial(ctl):
 def test_crear_flecha_y_descartar_una_demasiado_corta(ctl):
     ctl.set_tool(Tool.ARROW)
     drag(ctl, (10.0, 10.0), (200.0, 10.0))
-    assert ctl.doc.items == [Arrow("a1", (10.0, 10.0), (200.0, 10.0))]
+    # la herramienta Flecha crea la DINAMICA (cuerpo conico, punta grande, sombra suave)
+    assert ctl.doc.items == [Arrow("a1", (10.0, 10.0), (200.0, 10.0), body=ArrowBody.TAPERED,
+                                   width=DYNAMIC_ARROW_WIDTH, head_size=DYNAMIC_HEAD_SIZE, shadow=True)]
     ctl.set_tool(Tool.ARROW)
     drag(ctl, (300.0, 300.0), (303.0, 301.0))
     assert len(ctl.doc.items) == 1

@@ -73,7 +73,7 @@ TOOL_BUTTONS = (
     (Tool.MARKER, "Marcador", "Recuadro con resplandor dorado y flecha: arrastra sobre la captura"),
     (Tool.MARKER_PLAIN, "Recuadro", "Marcador sin flecha: el mismo recuadro con resplandor, sin la flecha"),
     (Tool.HIGHLIGHT, "Resaltar", "Resaltador: pinta una zona (texto, celdas) con un color translucido; arrastra sobre ella"),
-    (Tool.ARROW, "Flecha", "Flecha suelta: arrastra del inicio a la punta"),
+    (Tool.ARROW, "Flecha", "Flecha dinamica: arrastra del inicio a la punta. En el panel: cuerpo conico o parejo, curva (con asa), codo, punta, sombra"),
     (Tool.LINE, "Linea", "Linea recta (sirve de conector): arrastra del inicio al final; las puntas y el estilo se eligen en el panel"),
     (Tool.PEN, "Lapiz", "Dibuja a mano alzada: mantén el boton y arrastra. El trazo se suaviza solo al soltar"),
     (Tool.PEN_MARKER, "Resaltador libre", "Resalta a mano alzada con un trazo ancho que deja ver (y leer) lo de abajo"),

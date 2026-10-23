@@ -118,7 +118,7 @@ def paint_primitives(
             painter.drawLine(QPointF(*p.a), QPointF(*p.b))
         elif isinstance(p, PPolygon):
             painter.setPen(_pen(p.stroke, p.width, p.opacity, round_join=True))
-            painter.setBrush(_brush(p.fill))
+            painter.setBrush(_brush(p.fill, p.fill_opacity))
             painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in p.points]))
         elif isinstance(p, PCircle):
             painter.setPen(_pen(p.stroke, p.width, p.opacity, dash=p.dash, cap=p.cap))

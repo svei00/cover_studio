@@ -29,7 +29,7 @@ from core.annotate.model import (
     Stroke,
     TextLabel,
 )
-from core.annotate.primitives import arrow_path, label_box, step_extent, stroke_curve
+from core.annotate.primitives import arrow_path, curve_apex, label_box, step_extent, stroke_curve
 
 Point = tuple[float, float]
 
@@ -218,7 +218,7 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
         return handles
     if isinstance(item, Arrow):
         handles = {Handle.START: item.start, Handle.END: item.end}
-        mid = z_middle_handle(item)
+        mid = z_middle_handle(item) or curve_middle_handle(item)
         if mid is not None:
             handles[Handle.MID] = mid
         return handles
@@ -234,6 +234,13 @@ def z_middle_handle(a: Arrow) -> Point | None:
     if a.elbow_vertical_first:
         return None if y1 == y2 else ((x1 + x2) / 2, y1 + (y2 - y1) * a.elbow_split)
     return None if x1 == x2 else (x1 + (x2 - x1) * a.elbow_split, (y1 + y2) / 2)
+
+
+def curve_middle_handle(a: Arrow) -> Point | None:
+    """Donde esta el asa para doblar una flecha curva (la mitad del arco); None si no es curva o si start y end coinciden."""
+    if a.route is not ConnectorRoute.CURVE or a.start == a.end:
+        return None
+    return curve_apex(a.start, a.end, a.curve_bend)
 
 
 def hit_handle(item: Annotation, p: Point, tol: float, arrows: Arrows | None = None) -> Handle | None:
@@ -259,9 +266,8 @@ def selection_rect(item: Annotation, scale: float) -> Rect:
     if isinstance(item, (Marker, Redaction, Highlight, Spotlight, ImageOverlay)):
         return item.rect
     if isinstance(item, Arrow):
-        x0, x1 = sorted((item.start[0], item.end[0]))
-        y0, y1 = sorted((item.start[1], item.end[1]))
-        return Rect(x0, y0, x1 - x0, y1 - y0)
+        xs, ys = zip(*arrow_path(item))   # el recorrido, no solo los extremos: un arco se sale de la caja de inicio y fin
+        return Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
     if isinstance(item, StepBadge):
         r = step_extent(item, scale)
         return Rect(item.center[0] - r, item.center[1] - r, 2 * r, 2 * r)
@@ -380,6 +386,14 @@ def resize_item(
             split = (p[1] - y1) / (y2 - y1) if item.elbow_vertical_first else (p[0] - x1) / (x2 - x1)
             split = min(1.0, max(0.0, split))
             return replace(item, elbow_split=0.5 if abs(split - 0.5) < MID_SNAP else split)
+        if handle is Handle.MID and curve_middle_handle(item) is not None:
+            # el punto arrastrado es la mitad del arco: su desvio perpendicular es la mitad del de la curva
+            (x1, y1), (x2, y2) = item.start, item.end
+            dx, dy = x2 - x1, y2 - y1
+            along = (p[0] - (x1 + x2) / 2) * -dy + (p[1] - (y1 + y2) / 2) * dx
+            bend = 2 * along / (dx * dx + dy * dy)
+            bend = max(-style.MAX_CURVE_BEND, min(style.MAX_CURVE_BEND, bend))
+            return replace(item, curve_bend=0.0 if abs(bend) < style.CURVE_SNAP else bend)
         return item
     if isinstance(item, Magnifier):
         return _resize_lens(item, handle, p, min_size)

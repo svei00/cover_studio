@@ -91,6 +91,33 @@ MAX_FOCUS_DIM = 0.95
 MAX_FOCUS_BLUR = 60.0     # radio maximo del desenfoque, en px de la captura
 MAX_FOCUS_CORNER = 200.0
 
+# Flecha dinamica (estilo ShareX): cuerpo conico, punta grande y solida, curva y sombra suave. Todo es opcional: con los valores por
+# defecto de la anotacion la flecha es la de siempre.
+ARROW_TAIL_RATIO = 0.18         # grosor de la cola de un cuerpo conico respecto al de la punta (1.0 = parejo)
+MIN_HEAD_SIZE = 0.5
+MAX_HEAD_SIZE = 3.0
+DYNAMIC_ARROW_WIDTH = 7.0       # la herramienta Flecha crea la dinamica: mas gruesa que la de siempre (5)...
+DYNAMIC_HEAD_SIZE = 1.5         # ...y con la punta mas grande
+DEFAULT_CURVE_BEND = 0.25       # curvatura al pasar a "Curvo": desvio del arco, como fraccion del largo de la flecha
+MAX_CURVE_BEND = 1.0
+CURVE_SNAP = 0.03               # al soltar el asa de la curva a menos de esto de 0, queda recta
+ARROW_SHADOW_DY = 4.0           # cuanto cae la sombra hacia abajo (a escala 1)
+ARROW_SHADOW_CORE = 0.30        # opacidad del nucleo de la sombra con intensidad 1
+MIN_ARROW_SHADOW = 0.1
+MAX_ARROW_SHADOW = 2.0
+ARROW_SHADOW_RINGS: tuple[tuple[float, float], ...] = tuple(
+    (i * 1.0, round(0.10 * (1 - i / 7.0) ** 1.5, 4)) for i in range(1, 7)
+)
+
+
+def arrow_shadow_rings(strength: float = 1.0) -> tuple[tuple[float, float], ...]:
+    """Capas del desenfoque de la sombra de una flecha: (separacion, opacidad), con la intensidad aplicada."""
+    return tuple((off, min(1.0, op * strength)) for off, op in ARROW_SHADOW_RINGS)
+
+
+def arrow_shadow_core(strength: float = 1.0) -> float:
+    return min(1.0, ARROW_SHADOW_CORE * strength)
+
 # Imagen pegada encima (Ctrl+Shift+V): se compone en el bitmap. La sombra "flotante" imita la de los menus de Windows 11:
 # suave, un poco hacia abajo y tenue. Las medidas son para escala 1 y se multiplican por la escala del documento.
 MIN_OVERLAY_SIZE = 12.0         # lado minimo al redimensionar (px de la captura)

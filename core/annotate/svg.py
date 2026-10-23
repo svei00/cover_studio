@@ -108,6 +108,8 @@ def primitive_to_svg(p: Primitive, crops: Mapping[str, Image.Image] | None = Non
     if isinstance(p, PPolygon):
         pts = " ".join(f"{_f(x)},{_f(y)}" for x, y in p.points)
         fill = f'fill="{p.fill}"' if p.fill else 'fill="none"'
+        if p.fill and p.fill_opacity != 1.0:
+            fill += f' fill-opacity="{p.fill_opacity}"'
         stroke = (
             f'stroke="{p.stroke}" stroke-width="{_f(p.width)}" stroke-opacity="{p.opacity}" '
             f'stroke-linejoin="round"'
