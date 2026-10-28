@@ -715,8 +715,20 @@ class PropertiesPanel(QWidget):
         self._arrow_route.currentIndexChanged.connect(
             lambda _i: self._apply(route=ConnectorRoute(self._arrow_route.currentData())))
         self._field_row(form, "Trazado", self._arrow_route, "route", ConnectorRoute.STRAIGHT)
+        self._arrow_shape = QComboBox()
+        self._arrow_shape.addItem("L (una esquina)", "l")
+        self._arrow_shape.addItem("Z (dos esquinas)", "z")
+        self._arrow_shape.currentIndexChanged.connect(lambda _i: self._apply(elbow_z=self._arrow_shape.currentData() == "z"))
+        self._arrow_shape_row = self._field_row(form, "Forma del codo", self._arrow_shape, "elbow_z", False)
+        self._arrow_split = QSpinBox()
+        self._arrow_split.setRange(0, 100)
+        self._arrow_split.setSuffix(" %")
+        self._arrow_split.setToolTip("Donde queda el tramo del medio de la Z, a lo largo del recorrido")
+        self._arrow_split.valueChanged.connect(lambda v: self._apply(elbow_split=v / 100))
+        self._arrow_split_row = self._field_row(form, "Tramo del medio", self._arrow_split, "elbow_split", 0.5)
         self._arrow_vertical_first = QCheckBox("Codo: salir en vertical")
-        self._arrow_vertical_first.setToolTip("Por defecto el codo sale en horizontal y llega en vertical; esto lo invierte")
+        self._arrow_vertical_first.setToolTip(
+            "Por defecto el codo sale en horizontal; esto lo invierte (en la Z, el tramo del medio pasa a ser horizontal)")
         self._arrow_vertical_first.toggled.connect(lambda on: self._apply(elbow_vertical_first=on))
         form.addRow(self._arrow_vertical_first)
         self._arrow_glow = QCheckBox("Resplandor")
@@ -1246,7 +1258,13 @@ class PropertiesPanel(QWidget):
                 self._set_combo(self._arrow_style, item.line_style.value)
                 self._set_combo(self._arrow_route, item.route.value)
                 self._arrow_vertical_first.setChecked(item.elbow_vertical_first)
-                self._arrow_form.setRowVisible(self._arrow_vertical_first, item.route is ConnectorRoute.ELBOW)
+                elbow = item.route is ConnectorRoute.ELBOW
+                self._set_combo(self._arrow_shape, "z" if item.elbow_z else "l")
+                if self._arrow_split.value() != round(item.elbow_split * 100):
+                    self._arrow_split.setValue(round(item.elbow_split * 100))
+                self._arrow_form.setRowVisible(self._arrow_vertical_first, elbow)
+                self._arrow_form.setRowVisible(self._arrow_shape_row, elbow)
+                self._arrow_form.setRowVisible(self._arrow_split_row, elbow and item.elbow_z)
                 if abs(self._arrow_width.value() - item.width) > 1e-9:
                     self._arrow_width.setValue(item.width)
                 self._arrow_glow.setChecked(item.glow)

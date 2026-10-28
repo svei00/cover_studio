@@ -228,7 +228,8 @@ def item_to_dict(item: Annotation) -> dict:
                 "glow_color": item.glow_color, "head_start": item.head_start.value,
                 "head_end": item.head_end.value, "line_style": item.line_style.value,
                 "width": item.width, "glow_strength": item.glow_strength, "glow_size": item.glow_size,
-                "route": item.route.value, "elbow_vertical_first": item.elbow_vertical_first}
+                "route": item.route.value, "elbow_vertical_first": item.elbow_vertical_first,
+                "elbow_z": item.elbow_z, "elbow_split": item.elbow_split}
     if isinstance(item, StepBadge):
         return {"type": "step", "id": item.id, "center": list(item.center), "number": item.number,
                 "color": item.color, "shape": item.shape.value, "fill_color": item.fill_color,
@@ -301,6 +302,8 @@ def item_from_dict(data: dict) -> Annotation:
                 _glow_strength(data.get("glow_strength")), _glow_size(data.get("glow_size")),
                 _enum_or_default(ConnectorRoute, data.get("route"), ConnectorRoute.STRAIGHT),
                 data.get("elbow_vertical_first") is True,
+                data.get("elbow_z") is True,
+                _number_or_default(data.get("elbow_split"), 0.0, 1.0, 0.5),
             )
         if kind == "step":
             return StepBadge(

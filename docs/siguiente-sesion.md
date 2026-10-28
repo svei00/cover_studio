@@ -91,7 +91,7 @@ Ver `docs/arquitectura-anotar.md` ("Seleccion multiple, alinear y distribuir"). 
 ### 3.1d-bis Editar formato de varias a la vez + codo en flechas/lineas: HECHO (sin commitear al escribir esto)
 Ver `docs/arquitectura-anotar.md` ("Cambiar el formato de varias a la vez" y "Flecha y linea con codo"). Tests: `test_annotate_multiedit.py`,
 `test_annotate_arrow_elbow.py`. **Ojo: `selected_item()` sigue siendo None con 2+; lo que edita propiedades usa `controller.edit_target()`.**
-"Distribuir" paso a la barra compartida de alinear. Pendiente: el codo con dos esquinas (Z) para flechas; la flecha del Marcador no lleva codo.
+"Distribuir" paso a la barra compartida de alinear. La Z (dos esquinas) tambien esta hecha. Pendiente: asa en el lienzo para el tramo del medio; la flecha del Marcador no lleva codo.
 
 ### 3.1e Pegar encima (Ctrl+Shift+V) + menu de clic derecho + lienzo en blanco: LAS TRES FASES HECHAS
 Ver `docs/arquitectura-anotar.md` ("Pegar encima", "Menu de clic derecho y orden de las capas" y "Lienzo en blanco"). Tests:

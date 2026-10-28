@@ -754,6 +754,10 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - Seleccion: el clic acepta cualquiera de los dos tramos (`edit.hit_item`); las asas siguen en `start` y `end`. JSON: `"route"` y
   `"elbow_vertical_first"`; ausentes o invalidos = recta. Panel: "Trazado" (Recto / Con codo) y "Codo: salir en vertical".
 - La flecha automatica del Marcador no lleva codo (solo `Arrow`, que es tambien la herramienta Linea).
+- **Z (dos esquinas)**: `Arrow.elbow_z` (False = L) y `Arrow.elbow_split` (0..1, 0.5 = tramo del medio a la mitad del recorrido). Sale y
+  llega en el mismo eje: horizontal-vertical-horizontal, o con `elbow_vertical_first` vertical-horizontal-vertical. En 0 o 1 degenera en
+  L y alineada en recta (`lens.simplify_path` quita puntos repetidos). Panel: "Forma del codo" (L / Z) y "Tramo del medio" (solo en Z).
+  Sin asa en el lienzo para el tramo del medio: se ajusta en el panel.
 
 ### Pegar encima (imagen pegada sobre la captura) — fase 1
 

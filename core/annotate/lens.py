@@ -263,7 +263,7 @@ def _exit_direction(rect: Rect, round_shape: bool, p: Point) -> tuple[int, int]:
     return min(sides, key=sides.get)   # el lado mas cercano (en una esquina gana el horizontal)
 
 
-def _simplify(points: list[Point]) -> list[Point]:
+def simplify_path(points: list[Point]) -> list[Point]:
     """Sin puntos repetidos ni puntos de en medio de un tramo recto."""
     out: list[Point] = []
     for p in points:
@@ -284,16 +284,16 @@ def orthogonal_path(a: Point, da: tuple[int, int], b: Point, db: tuple[int, int]
             mx = (max(a[0], b[0]) + ELBOW_CLEARANCE) if da[0] > 0 else (min(a[0], b[0]) - ELBOW_CLEARANCE)
         else:
             mx = (a[0] + b[0]) / 2
-        return _simplify([a, (mx, a[1]), (mx, b[1]), b])
+        return simplify_path([a, (mx, a[1]), (mx, b[1]), b])
     if not horizontal_a and not horizontal_b:   # Z: sale y llega en vertical
         if da == db:
             my = (max(a[1], b[1]) + ELBOW_CLEARANCE) if da[1] > 0 else (min(a[1], b[1]) - ELBOW_CLEARANCE)
         else:
             my = (a[1] + b[1]) / 2
-        return _simplify([a, (a[0], my), (b[0], my), b])
+        return simplify_path([a, (a[0], my), (b[0], my), b])
     if horizontal_a:   # L: sale en horizontal y llega en vertical
-        return _simplify([a, (b[0], a[1]), b])
-    return _simplify([a, (a[0], b[1]), b])
+        return simplify_path([a, (b[0], a[1]), b])
+    return simplify_path([a, (a[0], b[1]), b])
 
 
 def connector_path(m: Magnifier) -> list[Point]:

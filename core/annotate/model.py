@@ -172,6 +172,8 @@ class Arrow:
     glow_size: float = DEFAULT_GLOW_SIZE
     route: ConnectorRoute = ConnectorRoute.STRAIGHT   # ELBOW: un codo en angulo recto entre start y end
     elbow_vertical_first: bool = False                # en codo, sale en vertical (si no, en horizontal)
+    elbow_z: bool = False                             # en codo: dos esquinas (Z) en vez de una (L); sale y llega en el mismo eje
+    elbow_split: float = 0.5                          # en Z: donde queda el tramo del medio, 0..1 del recorrido (0.5 = a la mitad)
 
 
 @dataclass(frozen=True)

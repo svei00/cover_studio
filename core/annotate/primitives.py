@@ -184,6 +184,13 @@ def _head_points(tip: Point, ux: float, uy: float, head: float) -> tuple[Point, 
 def arrow_path(a: Arrow) -> list[Point]:
     """Puntos por los que pasa una flecha o linea: recta (2 puntos) o con un codo en angulo recto (3). Si start y end
     estan alineados el codo se reduce a la recta."""
+    if a.route is ConnectorRoute.ELBOW and a.elbow_z:   # Z: sale y llega en el mismo eje, con el tramo del medio en `elbow_split`
+        (x1, y1), (x2, y2) = a.start, a.end
+        if a.elbow_vertical_first:
+            my = y1 + (y2 - y1) * a.elbow_split
+            return lens.simplify_path([a.start, (x1, my), (x2, my), a.end])
+        mx = x1 + (x2 - x1) * a.elbow_split
+        return lens.simplify_path([a.start, (mx, y1), (mx, y2), a.end])
     if a.route is ConnectorRoute.ELBOW:
         horizontal, vertical = (1, 0), (0, 1)
         first, last = (vertical, horizontal) if a.elbow_vertical_first else (horizontal, vertical)
