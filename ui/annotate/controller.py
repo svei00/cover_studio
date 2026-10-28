@@ -183,13 +183,20 @@ class _MultiReplaceCommand(QUndoCommand):
     deltas. Con `merge_id` (las flechas del teclado) los pasos seguidos sobre las mismas anotaciones se fusionan."""
 
     def __init__(
-        self, controller: EditController, olds: list[Annotation], news: list[Annotation], text: str, merge_id: int = -1
+        self,
+        controller: EditController,
+        olds: list[Annotation],
+        news: list[Annotation],
+        text: str,
+        merge_id: int = -1,
+        fields: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__(text)
         self._controller = controller
         self._olds = olds
         self._news = news
         self._merge_id = merge_id
+        self._fields = fields  # campos editados (cambio de formato en grupo): solo se fusionan los del MISMO campo
 
     def id(self) -> int:  # noqa: A003 (override de Qt)
         return self._merge_id
@@ -202,6 +209,8 @@ class _MultiReplaceCommand(QUndoCommand):
 
     def mergeWith(self, other: QUndoCommand) -> bool:  # noqa: N802 (override de Qt)
         if not isinstance(other, _MultiReplaceCommand) or [i.id for i in other._news] != [i.id for i in self._news]:
+            return False
+        if other._fields != self._fields:
             return False
         self._news = other._news
         return True
@@ -319,6 +328,16 @@ class EditController(QObject):
 
     def selected_items(self) -> list[Annotation]:
         return [item for i in self._selected if (item := self.item_by_id(i)) is not None]
+
+    def edit_target(self) -> Annotation | None:
+        """La anotacion cuyas propiedades se muestran y se editan: la unica seleccionada o, con varias del MISMO tipo (varios
+        pasos, varias flechas...), la principal (la ultima que se sumo); un cambio de formato se aplica a todas. Con tipos
+        mezclados es None: ahi solo se alinea y se distribuye."""
+        items = self.selected_items()
+        if len(items) <= 1:
+            return items[0] if items else None
+        kind = type(items[-1])
+        return items[-1] if all(type(i) is kind for i in items) else None
 
     def set_icon_defaults(self, kind: IconKind | None = None, style: IconStyle | None = None) -> None:
         """Icono (herramienta Icono) y estilo (todos) con que se colocan los iconos nuevos."""
@@ -916,17 +935,25 @@ class EditController(QObject):
         cambios seguidos sobre la misma anotacion se fusionan en un solo paso de
         deshacer (util al escribir texto); con `_merge=False` cada cambio es su propio
         paso (colores). Los demas kwargs son campos del dataclass, incluido `text`."""
-        selected = self.selected_item()
-        if selected is None:
+        if self.edit_target() is None:
             return
-        updated = replace(selected, **changes)
+        merge_id = PROPERTY_MERGE_ID if _merge else -1
+        fields = frozenset(changes)
+        pairs = [(old, self._edited(old, changes)) for old in self.selected_items()]
+        pairs = [(old, new) for old, new in pairs if new != old]
+        if len(pairs) == 1 and len(self._selected) == 1:
+            self.stack.push(_ReplaceCommand(self, pairs[0][0], pairs[0][1], "Editar", merge_id, fields))
+        elif pairs:   # varias seleccionadas del mismo tipo: UN paso de deshacer para todas
+            self.stack.push(_MultiReplaceCommand(
+                self, [o for o, _ in pairs], [n for _, n in pairs], "Editar", merge_id, fields))
+
+    def _edited(self, item: Annotation, changes: dict) -> Annotation:
+        updated = replace(item, **changes)
         if isinstance(updated, Magnifier) and ("zoom" in changes or "shape" in changes):
             # un lente mas grande o de otra forma puede quedar encima de su origen o pegado a el
             if lens.is_crowded(updated):
                 updated = replace(updated, lens_center=self._auto_lens_center(updated))
-        if updated != selected:
-            merge_id = PROPERTY_MERGE_ID if _merge else -1
-            self.stack.push(_ReplaceCommand(self, selected, updated, "Editar", merge_id, frozenset(changes)))
+        return updated
 
     def undo(self) -> None:
         self.stack.undo()

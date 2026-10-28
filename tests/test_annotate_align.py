@@ -219,7 +219,7 @@ def test_el_panel_tiene_los_ocho_botones_con_icono_y_ayuda(qapp):
 def test_los_botones_alinean_la_seleccion_y_distribuir_se_activa_con_tres(qapp, tmp_path):
     from PIL import Image
 
-    from ui.annotate.panel import _PAGE_MULTI
+    from ui.annotate.panel import _PAGE_ICON
     from ui.annotate.tab import AnnotateTab
 
     Image.new("RGB", (800, 600), (255, 255, 255)).save(tmp_path / "cap.png")
@@ -232,7 +232,8 @@ def test_los_botones_alinean_la_seleccion_y_distribuir_se_activa_con_tres(qapp, 
     p = tab.panel
     tab.controller.select_many(["c1", "c2"])
     QApplication.processEvents()
-    assert p._pages.currentIndex() == _PAGE_MULTI
+    assert p._pages.currentIndex() == _PAGE_ICON   # del mismo tipo: sus propiedades; alinear y distribuir van en la barra compartida
+    assert p._distribute_box.isVisibleTo(p) and p._align_strip.isVisibleTo(p)
     assert all(b.isEnabled() for b in p._align_buttons.values()) and not any(b.isEnabled() for b in p._distribute_buttons.values())
     tab.controller.select_many(["c1", "c2", "c3"])
     QApplication.processEvents()

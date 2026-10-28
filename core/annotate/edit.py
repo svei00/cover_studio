@@ -28,7 +28,7 @@ from core.annotate.model import (
     Stroke,
     TextLabel,
 )
-from core.annotate.primitives import label_box, step_extent, stroke_curve
+from core.annotate.primitives import arrow_path, label_box, step_extent, stroke_curve
 
 Point = tuple[float, float]
 
@@ -127,7 +127,8 @@ def hit_item(
     if isinstance(item, Stroke):
         return freehand.distance_to_polyline(p, stroke_curve(item)) <= item.width * scale / 2 + tol
     if isinstance(item, Arrow):
-        return distance_to_segment(p, item.start, item.end) <= tol
+        path = arrow_path(item)
+        return any(distance_to_segment(p, a, b) <= tol for a, b in zip(path, path[1:]))
     if isinstance(item, StepBadge):
         dx, dy = abs(p[0] - item.center[0]), abs(p[1] - item.center[1])
         reach = step_extent(item, scale) + tol / 2

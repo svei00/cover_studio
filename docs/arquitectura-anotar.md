@@ -735,6 +735,25 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
   "Alinear" (`_align_strip`, `_sync_align_strip`) es COMPARTIDA: vive entre el titulo y las paginas del panel, visible con 1 o mas
   seleccionadas (menos en Recortar); la pagina multiple solo conserva distribuir.
 - Pendiente: asas de tamano para varias; igualar tamanos.
+- **Cambiar el formato de varias a la vez**: con 2 o mas seleccionadas DEL MISMO TIPO (varios pasos, varias flechas...) el panel muestra la
+  pagina de propiedades de ese tipo (titulo "Paso numerado (3 seleccionados)") y cada cambio se aplica a todas. `controller.edit_target()` es
+  la principal (la ultima que se sumo) si todas son del mismo tipo y None si hay tipos mezclados; `selected_item()` sigue siendo solo
+  "exactamente una". `edit_selected` arma un `_MultiReplaceCommand` con los campos editados (`fields`): UN paso de deshacer para todas, y
+  solo se fusionan ajustes seguidos del MISMO campo. Solo entran las que de verdad cambian. Los controles se llenan con la principal (su
+  boton de restablecer tambien la mira). Lo que es de cada una se oculta en grupo: el numero del Paso, el texto de la etiqueta, "Tamano
+  real", "Recolocar flecha / lupa / conector". Con tipos mezclados sigue la pagina `_PAGE_MULTI` (solo alinear y distribuir). "Distribuir"
+  ahora vive en la barra compartida de alinear (visible con 2 o mas), no en esa pagina.
+
+### Flecha y linea con codo
+
+- `Arrow.route` (`ConnectorRoute`, el mismo de la lupa: recta o `ELBOW`) y `Arrow.elbow_vertical_first` (False: sale en horizontal y llega
+  en vertical; True: al reves). Es UN codo en angulo recto entre `start` y `end` (la L); si estan alineados se reduce a la recta.
+  `primitives.arrow_path(a)` da los puntos (reusa `lens.orthogonal_path`).
+- Dibujo: el cuerpo (y su resplandor) es UN `PPath`, asi la esquina no tiene muesca; las puntas miran por el tramo en que termina el
+  camino (la final por el ultimo, la inicial hacia afuera del primero). Las rayas viajan en el camino. Sin codo el dibujo es identico.
+- Seleccion: el clic acepta cualquiera de los dos tramos (`edit.hit_item`); las asas siguen en `start` y `end`. JSON: `"route"` y
+  `"elbow_vertical_first"`; ausentes o invalidos = recta. Panel: "Trazado" (Recto / Con codo) y "Codo: salir en vertical".
+- La flecha automatica del Marcador no lleva codo (solo `Arrow`, que es tambien la herramienta Linea).
 
 ### Pegar encima (imagen pegada sobre la captura) — fase 1
 

@@ -422,7 +422,7 @@ class PropertiesPanel(QWidget):
             self._c.edit_selected(_merge=False, **{field: value()})   # restablecer es su propio paso
 
         def is_default() -> bool:
-            item = self._c.selected_item()
+            item = self._c.edit_target()
             return item is None or not hasattr(item, field) or getattr(item, field) == value()
 
         return self._reset_row(form, text, control, reset, is_default)
@@ -521,7 +521,7 @@ class PropertiesPanel(QWidget):
 
     def _highlight_default_opacity(self) -> float:
         """Intensidad de fabrica del resaltador seleccionado: depende de su modo."""
-        item = self._c.selected_item()
+        item = self._c.edit_target()
         if isinstance(item, Highlight) and item.mode is HighlightMode.OVERLAY:
             return HIGHLIGHT_OVERLAY_OPACITY
         return HIGHLIGHT_MARKER_OPACITY
@@ -548,14 +548,14 @@ class PropertiesPanel(QWidget):
         return PEN_MARKER_WIDTH, HIGHLIGHT_OVERLAY_OPACITY if mode is PenMode.OVERLAY else HIGHLIGHT_MARKER_OPACITY
 
     def _selected_pen_default(self, which: int):
-        item = self._c.selected_item()
+        item = self._c.edit_target()
         mode = item.mode if isinstance(item, Stroke) else PenMode.PEN
         return self._pen_defaults(mode)[which]
 
     def _on_pen_mode_changed(self) -> None:
         """Cambiar de modo (un solo paso): ajusta la opacidad al modo y, al pasar de lapiz a resaltador o al reves,
         tambien el grosor. Entre los dos resaltadores el grosor se conserva."""
-        item = self._c.selected_item()
+        item = self._c.edit_target()
         if self._syncing or not isinstance(item, Stroke):
             return
         mode = PenMode(self._pen_mode.currentData())
@@ -577,9 +577,9 @@ class PropertiesPanel(QWidget):
         self._pen_mode.currentIndexChanged.connect(lambda _i: self._on_pen_mode_changed())
         self._reset_row(
             form, "Modo", self._pen_mode, self._reset_pen_mode,
-            lambda: not isinstance(self._c.selected_item(), Stroke)
-            or (self._c.selected_item().mode is PenMode.PEN and self._c.selected_item().width == PEN_WIDTH
-                and self._c.selected_item().opacity == 1.0),
+            lambda: not isinstance(self._c.edit_target(), Stroke)
+            or (self._c.edit_target().mode is PenMode.PEN and self._c.edit_target().width == PEN_WIDTH
+                and self._c.edit_target().opacity == 1.0),
         )
         note = QLabel(
             "Lapiz: trazo opaco. Resaltador: deja el texto negro legible, para capturas claras. "
@@ -621,9 +621,9 @@ class PropertiesPanel(QWidget):
         self._hl_mode.currentIndexChanged.connect(lambda _i: self._on_highlight_mode())
         self._reset_row(
             form, "Modo", self._hl_mode, self._reset_highlight_mode,
-            lambda: not isinstance(self._c.selected_item(), Highlight)
-            or (self._c.selected_item().mode is HighlightMode.MARKER
-                and self._c.selected_item().opacity == HIGHLIGHT_MARKER_OPACITY),
+            lambda: not isinstance(self._c.edit_target(), Highlight)
+            or (self._c.edit_target().mode is HighlightMode.MARKER
+                and self._c.edit_target().opacity == HIGHLIGHT_MARKER_OPACITY),
         )
         note = QLabel(
             "Marcador mezcla el color con lo de abajo y deja el texto negro: es para capturas claras. "
@@ -668,8 +668,8 @@ class PropertiesPanel(QWidget):
         self._marker_glow.toggled.connect(lambda on: self._apply(glow=on))
         self._reset_row(
             form, "Lado de la flecha", self._marker_arrow, self._reset_marker_arrow,
-            lambda: not isinstance(self._c.selected_item(), Marker)
-            or (self._c.selected_item().arrow is ArrowSide.AUTO and not self._c.selected_item().custom_arrow),
+            lambda: not isinstance(self._c.edit_target(), Marker)
+            or (self._c.edit_target().arrow is ArrowSide.AUTO and not self._c.edit_target().custom_arrow),
         )
         hint = QLabel("Arrastra la punta o la cola de la flecha para alargarla, acortarla o girarla; "
                       "arrastra su cuerpo para moverla.")
@@ -709,6 +709,16 @@ class PropertiesPanel(QWidget):
         self._arrow_width.setSuffix(" px")
         self._arrow_width.valueChanged.connect(lambda v: self._apply(width=float(v)))
         self._field_row(form, "Grosor", self._arrow_width, "width", MARKER_STROKE)
+        self._arrow_route = QComboBox()
+        for route, label in CONNECTOR_ROUTE_LABELS.items():
+            self._arrow_route.addItem(label, route.value)
+        self._arrow_route.currentIndexChanged.connect(
+            lambda _i: self._apply(route=ConnectorRoute(self._arrow_route.currentData())))
+        self._field_row(form, "Trazado", self._arrow_route, "route", ConnectorRoute.STRAIGHT)
+        self._arrow_vertical_first = QCheckBox("Codo: salir en vertical")
+        self._arrow_vertical_first.setToolTip("Por defecto el codo sale en horizontal y llega en vertical; esto lo invierte")
+        self._arrow_vertical_first.toggled.connect(lambda on: self._apply(elbow_vertical_first=on))
+        form.addRow(self._arrow_vertical_first)
         self._arrow_glow = QCheckBox("Resplandor")
         self._arrow_glow.toggled.connect(lambda on: self._apply(glow=on))
         form.addRow(self._arrow_glow)
@@ -775,7 +785,8 @@ class PropertiesPanel(QWidget):
         return page
 
     def _build_multi_page(self) -> QWidget:
-        """Varias anotaciones seleccionadas: lo que se puede hacer con el conjunto (alinear y distribuir)."""
+        """Varias anotaciones de TIPOS DISTINTOS: lo que se puede hacer con el conjunto (alinear y distribuir, que viven en la
+        barra compartida). Si son del mismo tipo se muestran sus propiedades y el formato se cambia a todas a la vez."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -789,17 +800,6 @@ class PropertiesPanel(QWidget):
         )
         hint.setWordWrap(True)
         layout.addWidget(self._multi_count)
-
-        self._distribute_buttons: dict[Distribute, QToolButton] = {}
-        distribute_box = QGroupBox("Distribuir (3 o mas)")
-        distribute_row = QHBoxLayout(distribute_box)
-        for axis, tip in DISTRIBUTE_TIPS.items():
-            button = self._tool_button(distribute_icon(axis), tip)
-            button.clicked.connect(lambda _checked=False, a=axis: self._c.distribute_selected(a))
-            distribute_row.addWidget(button)
-            self._distribute_buttons[axis] = button
-        distribute_row.addStretch(1)
-        layout.addWidget(distribute_box)
         layout.addWidget(hint)
         layout.addStretch(1)
         return page
@@ -826,6 +826,16 @@ class PropertiesPanel(QWidget):
         self._align_note = QLabel()
         self._align_note.setWordWrap(True)
         column.addWidget(self._align_note)
+        self._distribute_buttons: dict[Distribute, QToolButton] = {}
+        self._distribute_box = QGroupBox("Distribuir (3 o mas)")
+        distribute_row = QHBoxLayout(self._distribute_box)
+        for axis, tip in DISTRIBUTE_TIPS.items():
+            button = self._tool_button(distribute_icon(axis), tip)
+            button.clicked.connect(lambda _checked=False, a=axis: self._c.distribute_selected(a))
+            distribute_row.addWidget(button)
+            self._distribute_buttons[axis] = button
+        distribute_row.addStretch(1)
+        column.addWidget(self._distribute_box)
         return strip
 
     def _on_align_clicked(self, mode: Align) -> None:
@@ -836,6 +846,9 @@ class PropertiesPanel(QWidget):
         crop = self._c.tool is Tool.CROP
         self._align_strip.setVisible(count >= 1 and not crop and self._c.doc is not None)
         self._align_target.setVisible(count >= 2)
+        self._distribute_box.setVisible(count >= 2)
+        for button in self._distribute_buttons.values():
+            button.setEnabled(self._c.can_distribute())
         to_image = count == 1 or self._align_target.currentData() == "image"
         for button in self._align_buttons.values():
             button.setEnabled(self._c.can_align(to_image))
@@ -946,6 +959,7 @@ class PropertiesPanel(QWidget):
         self._field_row(form, "Tamano", self._text_size, "size", _TEXT_DEFAULT_SIZE)
         form.addRow(self._text_bold)
         self._field_row(form, "Alineacion", self._text_align, "align", TextAlign.LEFT)
+        self._text_form = form
         return page
 
     def _build_redaction_page(self) -> QWidget:
@@ -1136,6 +1150,7 @@ class PropertiesPanel(QWidget):
         self._lens_glow_color = self._color_row(form, "Color", "glow_color")
         *self._lens_glow_spins, self._lens_glow_rows = self._glow_rows(form)
         form.addRow(replace_btn)
+        self._lens_replace_btn = replace_btn
         return page
 
     @staticmethod
@@ -1198,24 +1213,23 @@ class PropertiesPanel(QWidget):
         """Muestra la pagina de la anotacion seleccionada con sus valores. No
         reescribe un control que ya tiene el valor (asi no se pierde el cursor
         mientras se escribe)."""
-        item = self._c.selected_item()
+        item = self._c.edit_target()
+        group = len(self._c.selected_ids) >= 2 and item is not None   # varias del mismo tipo: se editan juntas
         pal = self._c.doc.palette if self._c.doc is not None else brand_palette()
         self._syncing = True
         try:
             if self._c.tool is Tool.CROP and self._c.doc is not None:
                 self._pages.setCurrentIndex(_PAGE_CROP)
                 self._title.setText("Recortar")
-            elif len(self._c.selected_ids) >= 2:
+            elif len(self._c.selected_ids) >= 2 and item is None:
                 self._pages.setCurrentIndex(_PAGE_MULTI)
                 self._title.setText("Seleccion multiple")
                 self._multi_count.setText(f"{len(self._c.selected_ids)} anotaciones seleccionadas")
-                for button in self._distribute_buttons.values():
-                    button.setEnabled(self._c.can_distribute())
             elif isinstance(item, Marker):
                 self._pages.setCurrentIndex(_PAGE_MARKER)
                 self._title.setText("Marcador")
                 self._set_combo(self._marker_arrow, item.arrow.value)
-                self._marker_arrow_reset.setVisible(item.custom_arrow)
+                self._marker_arrow_reset.setVisible(item.custom_arrow and not group)
                 self._marker_arrow_hint.setVisible(item.arrow is not ArrowSide.NONE)
                 self._marker_glow.setChecked(item.glow)
                 self._marker_stroke.set_value(item.stroke_color or pal.marker, item.stroke_color is not None)
@@ -1230,6 +1244,9 @@ class PropertiesPanel(QWidget):
                 self._set_combo(self._arrow_head_start, item.head_start.value)
                 self._set_combo(self._arrow_head_end, item.head_end.value)
                 self._set_combo(self._arrow_style, item.line_style.value)
+                self._set_combo(self._arrow_route, item.route.value)
+                self._arrow_vertical_first.setChecked(item.elbow_vertical_first)
+                self._arrow_form.setRowVisible(self._arrow_vertical_first, item.route is ConnectorRoute.ELBOW)
                 if abs(self._arrow_width.value() - item.width) > 1e-9:
                     self._arrow_width.setValue(item.width)
                 self._arrow_glow.setChecked(item.glow)
@@ -1241,6 +1258,7 @@ class PropertiesPanel(QWidget):
                 self._title.setText("Paso numerado")
                 if self._step_number.value() != item.number:
                     self._step_number.setValue(item.number)
+                self._step_form.setRowVisible(self._step_number, not group)   # el numero es de cada paso
                 self._step_color.set_value(item.color or pal.step, item.color is not None)
                 self._set_combo(self._step_shape, item.shape.value)
                 self._step_fill.set_value(item.fill_color or CARD_FILL, item.fill_color is not None)
@@ -1280,6 +1298,7 @@ class PropertiesPanel(QWidget):
                 self._title.setText("Etiqueta de texto")
                 if self._text_edit.toPlainText() != item.text:
                     self._text_edit.setPlainText(item.text)
+                self._text_form.setRowVisible(self._text_edit, not group)   # el texto es de cada etiqueta
                 if self._text_size.value() != round(item.size):
                     self._text_size.setValue(round(item.size))
                 self._text_bold.setChecked(item.bold)
@@ -1314,7 +1333,9 @@ class PropertiesPanel(QWidget):
                             self._lens_connector_route_row):
                     self._lens_form.setRowVisible(row, item.connector)
                 self._set_combo(self._lens_connector_route, item.connector_route.value)
-                self._lens_form.setRowVisible(self._lens_connector_reset, item.connector and item.custom_connector)
+                self._lens_form.setRowVisible(
+                    self._lens_connector_reset, item.connector and item.custom_connector and not group)
+                self._lens_form.setRowVisible(self._lens_replace_btn, not group)
                 self._lens_glow.setChecked(item.glow)
                 self._lens_glow_color.set_value(item.glow_color or pal.glow, item.glow_color is not None)
                 self._lens_connector_glow.setChecked(item.connector_glow)
@@ -1356,7 +1377,7 @@ class PropertiesPanel(QWidget):
                 text = (f"{round(item.rect.w)} x {round(item.rect.h)} px: {pct:.0f} % de su tamano real "
                         f"({item.size[0]} x {item.size[1]})")
                 self._img_info.setText(text + (". Ampliada: se ve suavizada." if pct > 100.5 else "."))
-                self._img_real.setEnabled(not overlay_geometry.is_real_size(item))
+                self._img_real.setEnabled(not group and not overlay_geometry.is_real_size(item))
                 self._img_front.setEnabled(self._c.can_reorder(Order.FRONT))
                 self._img_back.setEnabled(self._c.can_reorder(Order.BACK))
                 if self._img_opacity.value() != round(item.opacity * 100):
@@ -1382,6 +1403,8 @@ class PropertiesPanel(QWidget):
             else:
                 self._pages.setCurrentIndex(_PAGE_EMPTY)
                 self._title.setText("Propiedades")
+            if group:
+                self._title.setText(f"{self._title.text()} ({len(self._c.selected_ids)} seleccionados)")
             self._sync_document()
             self._refresh_resets()
             self._sync_align_strip()

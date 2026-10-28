@@ -240,9 +240,19 @@ def test_con_una_sola_seleccionada_las_flechas_siguen_funcionando_como_antes(ctl
     assert _centers(ctl)["a1"] == (110.0, 100.0) and ctl.stack.count() == 1
 
 
-def test_editar_propiedades_con_varias_seleccionadas_no_hace_nada(ctl):
+def test_editar_propiedades_con_tipos_mezclados_no_hace_nada(ctl):
+    ctl.select_many(["a1", "a5"])
+    ctl.doc.items.append(StepBadge("st", (400.0, 300.0), 1))
+    ctl.select_many(["a1", "st"])
+    ctl.edit_selected(size=33.0)
+    assert not ctl.stack.canUndo() and ctl.item_by_id("a1").size != 33.0 and ctl.item_by_id("st").size != 33.0
+
+
+def test_editar_propiedades_con_varias_del_mismo_tipo_las_cambia_todas_en_un_paso(ctl):
     ctl.select_many(["a1", "a2"])
     ctl.edit_selected(size=33.0)
+    assert ctl.item_by_id("a1").size == ctl.item_by_id("a2").size == 33.0 and ctl.item_by_id("a3").size != 33.0
+    ctl.undo()
     assert not ctl.stack.canUndo() and ctl.item_by_id("a1").size != 33.0
 
 
@@ -290,11 +300,15 @@ def test_ctrl_clic_y_shift_clic_en_el_lienzo_suman_a_la_seleccion(tab):
 
 def test_el_panel_muestra_la_pagina_de_seleccion_multiple_con_el_conteo_y_vuelve_a_la_normal(tab):
     p = tab.panel
-    tab.controller.select_many(["a1", "a2"])
+    tab.doc.items.append(StepBadge("st", (400.0, 300.0), 1))
+    tab.controller.select_many(["a1", "st"])           # tipos distintos: solo se alinea y distribuye
     QApplication.processEvents()
     assert p._pages.currentIndex() == _PAGE_MULTI and "2 anotaciones" in p._multi_count.text()
-    tab.controller.select_many(["a1", "a2", "a3"])
+    tab.controller.select_many(["a1", "a2", "st"])
     assert "3 anotaciones" in p._multi_count.text()
+    tab.controller.select_many(["a1", "a2"])           # mismo tipo: las propiedades del tipo, para cambiarlas a la vez
+    QApplication.processEvents()
+    assert p._pages.currentIndex() == _PAGE_ICON and "2 seleccionados" in p._title.text()
     tab.controller.select("a1")
     QApplication.processEvents()
     assert p._pages.currentIndex() == _PAGE_ICON

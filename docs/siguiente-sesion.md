@@ -88,6 +88,11 @@ caracter). Antes de prometerla, MEDIR que Qt los dibuje a color con ese metodo (
 Ver `docs/arquitectura-anotar.md` ("Seleccion multiple, alinear y distribuir"). Tests: `test_annotate_multiselect.py`,
 `test_annotate_align.py`. **`selected_item()` es None con 2+ seleccionadas**: todo lo que edita propiedades es de una sola.
 
+### 3.1d-bis Editar formato de varias a la vez + codo en flechas/lineas: HECHO (sin commitear al escribir esto)
+Ver `docs/arquitectura-anotar.md` ("Cambiar el formato de varias a la vez" y "Flecha y linea con codo"). Tests: `test_annotate_multiedit.py`,
+`test_annotate_arrow_elbow.py`. **Ojo: `selected_item()` sigue siendo None con 2+; lo que edita propiedades usa `controller.edit_target()`.**
+"Distribuir" paso a la barra compartida de alinear. Pendiente: el codo con dos esquinas (Z) para flechas; la flecha del Marcador no lleva codo.
+
 ### 3.1e Pegar encima (Ctrl+Shift+V) + menu de clic derecho + lienzo en blanco: LAS TRES FASES HECHAS
 Ver `docs/arquitectura-anotar.md` ("Pegar encima", "Menu de clic derecho y orden de las capas" y "Lienzo en blanco"). Tests:
 `test_annotate_overlay.py`, `test_annotate_overlay_ui.py`, `test_annotate_layers.py`, `test_annotate_blank.py`. Fases 1 y 2

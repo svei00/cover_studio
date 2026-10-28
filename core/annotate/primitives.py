@@ -16,6 +16,7 @@ from core.annotate.model import (
     AnnotationDoc,
     Arrow,
     ArrowSide,
+    ConnectorRoute,
     Highlight,
     HeadStyle,
     HighlightMode,
@@ -180,6 +181,22 @@ def _head_points(tip: Point, ux: float, uy: float, head: float) -> tuple[Point, 
     )
 
 
+def arrow_path(a: Arrow) -> list[Point]:
+    """Puntos por los que pasa una flecha o linea: recta (2 puntos) o con un codo en angulo recto (3). Si start y end
+    estan alineados el codo se reduce a la recta."""
+    if a.route is ConnectorRoute.ELBOW:
+        horizontal, vertical = (1, 0), (0, 1)
+        first, last = (vertical, horizontal) if a.elbow_vertical_first else (horizontal, vertical)
+        return lens.orthogonal_path(a.start, first, a.end, last)
+    return [a.start, a.end]
+
+
+def _unit(a: Point, b: Point) -> Point:
+    """Vector unitario de a hacia b (nulo si coinciden)."""
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    return ((b[0] - a[0]) / length, (b[1] - a[1]) / length) if length else (0.0, 0.0)
+
+
 def _line_parts(
     a: Point,
     b: Point,
@@ -193,24 +210,28 @@ def _line_parts(
     line_style: LineStyle = LineStyle.SOLID,
     glow_strength: float = style.DEFAULT_GLOW_STRENGTH,
     glow_size: float = style.DEFAULT_GLOW_SIZE,
+    path: Sequence[Point] | None = None,
 ) -> list[Primitive]:
-    """Linea de a hacia b con puntas opcionales en cada extremo, con el resplandor debajo."""
+    """Linea de a hacia b con puntas opcionales en cada extremo, con el resplandor debajo. `path` (de `arrow_path`) es el
+    camino de a a b cuando lleva codo; cada punta mira en la direccion del tramo en que termina el camino."""
     x1, y1 = a
     x2, y2 = b
     length = math.hypot(x2 - x1, y2 - y1)
     if length == 0:
         return []
+    route = tuple(path) if path is not None and len(path) > 2 else (a, b)
     sw = width * scale
     head = style.ARROW_HEAD * scale * min(3.0, max(0.5, width / style.MARKER_STROKE))   # la punta sigue al grosor
-    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    ux, uy = _unit(route[-2], route[-1])
+    sx, sy = _unit(route[1], route[0])
     dash, cap = dash_pattern(line_style, sw)
     extra = style.ARROW_GLOW_EXTRA * scale * glow_size
     glow_opacity = min(1.0, style.ARROW_GLOW_OPACITY * glow_strength)
-    heads = [(h, p, d) for h, p, d in ((head_end, b, (ux, uy)), (head_start, a, (-ux, -uy))) if h is not HeadStyle.NONE]
+    heads = [(h, p, d) for h, p, d in ((head_end, b, (ux, uy)), (head_start, a, (sx, sy))) if h is not HeadStyle.NONE]
     parts: list[Primitive] = []
     if glow:
-        parts.append(PLine(a, b, glow_color, sw + extra, glow_opacity, dash, cap))
-    parts.append(PLine(a, b, color, sw, 1.0, dash, cap))
+        parts.append(_connector_line(route, glow_color, sw + extra, glow_opacity, dash, cap))
+    parts.append(_connector_line(route, color, sw, 1.0, dash, cap))
     for kind, point, (dx, dy) in heads:
         if kind is HeadStyle.DOT:
             radius = max(sw * 1.2, head * 0.35)
@@ -347,7 +368,7 @@ def marker_primitives(
 def arrow_primitives(a: Arrow, scale: float, palette: Palette = BRAND_PALETTE) -> list[Primitive]:
     return _line_parts(
         a.start, a.end, scale, a.glow, a.color or palette.arrow, a.glow_color or palette.glow,
-        a.width, a.head_start, a.head_end, a.line_style, a.glow_strength, a.glow_size,
+        a.width, a.head_start, a.head_end, a.line_style, a.glow_strength, a.glow_size, arrow_path(a),
     )
 
 
