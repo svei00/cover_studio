@@ -15,6 +15,7 @@ from core.annotate import freehand, lens, style
 from core.annotate.model import (
     Annotation,
     Arrow,
+    ConnectorRoute,
     Highlight,
     Icon,
     ImageOverlay,
@@ -47,7 +48,10 @@ class Handle(str, Enum):
     LENS = "lens"
     CONN_START = "conn_start"   # extremo del conector de la lupa que toca el origen
     CONN_END = "conn_end"       # el que toca el lente
+    MID = "mid"                 # tramo del medio de una flecha en Z: arrastrarlo lo desplaza a lo largo del recorrido
 
+
+MID_SNAP = 0.03   # al soltar el tramo del medio a menos de esto del centro (de 0 a 1) se queda justo en el centro
 
 CONNECTOR_HANDLE_CLEARANCE = 12.0   # px de la imagen: un asa lateral del origen tan cerca de un extremo del conector le cede el lugar
 
@@ -213,8 +217,23 @@ def item_handles(item: Annotation, arrows: Arrows | None = None) -> dict[Handle,
             handles[Handle.CONN_START], handles[Handle.CONN_END] = anchors
         return handles
     if isinstance(item, Arrow):
-        return {Handle.START: item.start, Handle.END: item.end}
+        handles = {Handle.START: item.start, Handle.END: item.end}
+        mid = z_middle_handle(item)
+        if mid is not None:
+            handles[Handle.MID] = mid
+        return handles
     return {}
+
+
+def z_middle_handle(a: Arrow) -> Point | None:
+    """Donde esta el asa del tramo del medio de una flecha en Z (la mitad de ese tramo); None si no es Z o si no hay recorrido
+    en el eje en que se desplaza (inicio y final a la misma x, o a la misma y si sale en vertical)."""
+    if a.route is not ConnectorRoute.ELBOW or not a.elbow_z:
+        return None
+    (x1, y1), (x2, y2) = a.start, a.end
+    if a.elbow_vertical_first:
+        return None if y1 == y2 else ((x1 + x2) / 2, y1 + (y2 - y1) * a.elbow_split)
+    return None if x1 == x2 else (x1 + (x2 - x1) * a.elbow_split, (y1 + y2) / 2)
 
 
 def hit_handle(item: Annotation, p: Point, tol: float, arrows: Arrows | None = None) -> Handle | None:
@@ -356,6 +375,11 @@ def resize_item(
             return replace(item, start=p)
         if handle is Handle.END:
             return replace(item, end=p)
+        if handle is Handle.MID and z_middle_handle(item) is not None:
+            (x1, y1), (x2, y2) = item.start, item.end
+            split = (p[1] - y1) / (y2 - y1) if item.elbow_vertical_first else (p[0] - x1) / (x2 - x1)
+            split = min(1.0, max(0.0, split))
+            return replace(item, elbow_split=0.5 if abs(split - 0.5) < MID_SNAP else split)
         return item
     if isinstance(item, Magnifier):
         return _resize_lens(item, handle, p, min_size)

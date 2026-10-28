@@ -163,3 +163,19 @@ def test_tipos_mezclados_siguen_con_la_pagina_de_alinear(tab):
     c.select_many(["s1", "t1"])
     QApplication.processEvents()
     assert p._pages.currentIndex() == _PAGE_MULTI
+
+
+def test_arrastrar_el_asa_de_la_z_es_un_solo_paso_de_deshacer(ctl):
+    from dataclasses import replace
+
+    ctl.select("f1")
+    ctl.edit_selected(_merge=False, route=ConnectorRoute.ELBOW, elbow_z=True, end=(300.0, 360.0))
+    n = ctl.stack.count()
+    mid = (200.0, 330.0)
+    ctl.press(mid, 6.0)
+    ctl.move((150.0, 330.0))
+    ctl.move((120.0, 330.0))
+    ctl.release((120.0, 330.0))
+    assert ctl.item_by_id("f1").elbow_split == pytest.approx(0.1) and ctl.stack.count() == n + 1
+    ctl.undo()
+    assert ctl.item_by_id("f1").elbow_split == 0.5

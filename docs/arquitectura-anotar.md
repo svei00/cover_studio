@@ -757,7 +757,9 @@ con campos de los dataclasses (un parametro llamado `text` ya causo ese bug).
 - **Z (dos esquinas)**: `Arrow.elbow_z` (False = L) y `Arrow.elbow_split` (0..1, 0.5 = tramo del medio a la mitad del recorrido). Sale y
   llega en el mismo eje: horizontal-vertical-horizontal, o con `elbow_vertical_first` vertical-horizontal-vertical. En 0 o 1 degenera en
   L y alineada en recta (`lens.simplify_path` quita puntos repetidos). Panel: "Forma del codo" (L / Z) y "Tramo del medio" (solo en Z).
-  Sin asa en el lienzo para el tramo del medio: se ajusta en el panel.
+  En el lienzo, `Handle.MID` (circulo azul, en la mitad del tramo del medio; `edit.z_middle_handle`) se arrastra a lo largo del recorrido: solo
+  cuenta la coordenada del eje en que se desplaza, se limita a 0..1 y a menos de `MID_SNAP` (3 %) del centro se pega a 0.5. No existe si
+  no es Z o si inicio y final coinciden en ese eje. Un arrastre es UN paso de deshacer.
 
 ### Pegar encima (imagen pegada sobre la captura) — fase 1
 

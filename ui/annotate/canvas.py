@@ -333,7 +333,7 @@ class AnnotateCanvas(QWidget):
         for handle, point in handles.items():
             c = self.image_to_view(point)
             box = QRectF(c.x() - half, c.y() - half, HANDLE_PX, HANDLE_PX)
-            if handle in (edit.Handle.CONN_START, edit.Handle.CONN_END):   # los del conector son redondos y de otro color
+            if handle in (edit.Handle.CONN_START, edit.Handle.CONN_END, edit.Handle.MID):   # los del conector y el de la Z son redondos y de otro color
                 painter.setBrush(QColor(SELECTION_COLOR))
                 painter.drawEllipse(box)
                 painter.setBrush(QColor("#FFFFFF"))

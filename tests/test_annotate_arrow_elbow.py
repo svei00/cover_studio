@@ -182,3 +182,41 @@ def test_exporta_a_png(tmp_path):
     assert img.getpixel((200, 100)) == (255, 0, 0)       # sobre el tramo horizontal
     assert img.getpixel((300, 160)) == (255, 0, 0)       # sobre el vertical
     assert img.getpixel((200, 160)) == (255, 255, 255)   # la diagonal queda vacia
+
+
+# --- asa del tramo del medio de la Z ---------------------------------------------------------------------
+
+def test_la_z_tiene_un_asa_en_la_mitad_de_su_tramo_del_medio():
+    asas = edit.item_handles(Z)
+    assert asas[edit.Handle.MID] == (200.0, 160.0) and set(asas) == {edit.Handle.START, edit.Handle.END, edit.Handle.MID}
+    assert edit.item_handles(replace(Z, elbow_vertical_first=True))[edit.Handle.MID] == (200.0, 160.0)
+    assert edit.item_handles(replace(Z, elbow_split=0.25))[edit.Handle.MID] == (150.0, 160.0)
+
+
+def test_sin_z_o_sin_recorrido_no_hay_asa_del_medio():
+    assert edit.Handle.MID not in edit.item_handles(A)
+    assert edit.Handle.MID not in edit.item_handles(replace(Z, end=(100.0, 220.0)))                       # misma x: nada que desplazar
+    assert edit.Handle.MID not in edit.item_handles(replace(Z, end=(300.0, 100.0), elbow_vertical_first=True))   # misma y
+
+
+def test_arrastrar_el_asa_desplaza_el_tramo_del_medio_a_lo_largo_del_recorrido():
+    assert edit.resize_item(Z, edit.Handle.MID, (150.0, 999.0)).elbow_split == pytest.approx(0.25)   # la y no importa
+    vertical = replace(Z, elbow_vertical_first=True)
+    assert edit.resize_item(vertical, edit.Handle.MID, (999.0, 190.0)).elbow_split == pytest.approx(0.75)
+
+
+def test_el_asa_no_sale_del_recorrido_y_se_pega_al_centro():
+    assert edit.resize_item(Z, edit.Handle.MID, (-50.0, 0.0)).elbow_split == 0.0
+    assert edit.resize_item(Z, edit.Handle.MID, (900.0, 0.0)).elbow_split == 1.0
+    assert edit.resize_item(replace(Z, elbow_split=0.2), edit.Handle.MID, (203.0, 0.0)).elbow_split == 0.5   # a menos de 3 %
+
+
+def test_el_asa_funciona_con_el_inicio_a_la_derecha_del_final():
+    atras = replace(Z, start=(300.0, 220.0), end=(100.0, 100.0))
+    assert edit.item_handles(atras)[edit.Handle.MID] == (200.0, 160.0)
+    assert edit.resize_item(atras, edit.Handle.MID, (250.0, 0.0)).elbow_split == pytest.approx(0.25)
+
+
+def test_el_asa_del_medio_se_agarra_con_el_clic():
+    assert edit.hit_handle(Z, (202.0, 158.0), TOL) is edit.Handle.MID
+    assert edit.hit_handle(Z, (100.0, 100.0), TOL) is edit.Handle.START
